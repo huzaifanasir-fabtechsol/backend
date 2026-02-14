@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.log
+envPhone/*
+db.sqlite3
+profile_pictures
+media

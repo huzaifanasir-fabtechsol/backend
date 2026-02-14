@@ -1,0 +1,68 @@
+from rest_framework import serializers
+from apps.revenue.models import Car, CarCategory, Order, OrderItem
+
+class CarCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CarCategory
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class CarSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    
+    class Meta:
+        model = Car
+        fields = ['id', 'category', 'category_name', 'name', 'model', 'chassis_number', 'year', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    car_name = serializers.CharField(source='car.name', read_only=True)
+    
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'car', 'car_name', 'venue', 'year_type', 'auction_fee', 'vehicle_price', 
+                  'consumption_tax', 'recycling_fee', 'automobile_tax', 'bid_fee', 'bid_fee_tax', 
+                  'subtotal', 'notes']
+
+class OrderItemCreateSerializer(serializers.Serializer):
+    category = serializers.IntegerField()
+    name = serializers.CharField(max_length=100)
+    model = serializers.CharField(max_length=100)
+    chassis_number = serializers.CharField(max_length=50)
+    year = serializers.IntegerField()
+    venue = serializers.CharField(required=False, allow_blank=True)
+    year_type = serializers.CharField(required=False, allow_blank=True)
+    auction_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    vehicle_price = serializers.DecimalField(max_digits=12, decimal_places=2)
+    consumption_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    recycling_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    automobile_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    bid_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    bid_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Order
+        fields = ['id', 'order_number', 'transaction_type', 'transaction_date', 'payment_status', 'customer_name', 
+                  'total_amount', 'notes', 'items', 'other_details', 'created_at', 'updated_at']
+        read_only_fields = ['order_number', 'created_at', 'updated_at']
+
+
+# ----------------- Create Order -----------------
+class CreateOrderSerializer(serializers.Serializer):
+    transaction_type = serializers.ChoiceField(choices=['purchase', 'sale', 'auction'])
+    transaction_catagory = serializers.ChoiceField(choices=['local', 'foreign'])
+    payment_status = serializers.ChoiceField(choices=['pending', 'completed'])
+    transaction_date = serializers.DateField()
+    customer_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    seller_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    address = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    auction_house = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    payment_method = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    account_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    items = OrderItemCreateSerializer(many=True)
