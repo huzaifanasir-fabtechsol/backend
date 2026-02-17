@@ -1,10 +1,10 @@
 from django.contrib import admin
-from apps.revenue.models import CarCategory, Car, Order, OrderItem
+from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, CompanyAccount, Auction
 
 @admin.register(CarCategory)
 class CarCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'user', 'created_at']
-    search_fields = ['name']
+    list_display = ['name', 'company', 'user', 'created_at']
+    search_fields = ['name', 'company']
 
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
@@ -22,3 +22,18 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ['order_number', 'customer_name']
     list_filter = ['transaction_type', 'transaction_date']
     inlines = [OrderItemInline]
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ['name', 'email', 'phone', 'bank_name', 'user', 'created_at']
+    search_fields = ['name', 'email', 'phone']
+
+@admin.register(CompanyAccount)
+class CompanyAccountAdmin(admin.ModelAdmin):
+    list_display = ['bank_name', 'account_number', 'account_holder', 'user', 'created_at']
+    search_fields = ['bank_name', 'account_number', 'account_holder']
+
+@admin.register(Auction)
+class AuctionAdmin(admin.ModelAdmin):
+    list_display = ['name', 'user', 'created_at']
+    search_fields = ['name', 'description']

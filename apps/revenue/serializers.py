@@ -1,10 +1,10 @@
 from rest_framework import serializers
-from apps.revenue.models import Car, CarCategory, Order, OrderItem
+from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, CompanyAccount, Auction
 
 class CarCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = CarCategory
-        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'company', 'description', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class CarSerializer(serializers.ModelSerializer):
@@ -12,7 +12,7 @@ class CarSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Car
-        fields = ['id', 'category', 'category_name', 'name', 'model', 'chassis_number', 'year', 'created_at', 'updated_at']
+        fields = ['id', 'category', 'category_name', 'name', 'description', 'model', 'chassis_number', 'year', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -43,11 +43,16 @@ class OrderItemCreateSerializer(serializers.Serializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    auction_name = serializers.CharField(source='auction.name', read_only=True)
+    customer_name_obj = serializers.CharField(source='customer.name', read_only=True)
+    company_account_name = serializers.CharField(source='company_account.bank_name', read_only=True)
     
     class Meta:
         model = Order
         fields = ['id', 'order_number', 'transaction_type', 'transaction_date', 'payment_status', 'customer_name', 
-                  'total_amount', 'notes', 'items', 'other_details', 'created_at', 'updated_at']
+                  'total_amount', 'notes', 'items', 'other_details', 'auction', 'auction_name', 
+                  'customer', 'customer_name_obj', 'company_account', 'company_account_name', 
+                  'created_at', 'updated_at']
         read_only_fields = ['order_number', 'created_at', 'updated_at']
 
 
@@ -55,8 +60,11 @@ class OrderSerializer(serializers.ModelSerializer):
 class CreateOrderSerializer(serializers.Serializer):
     transaction_type = serializers.ChoiceField(choices=['purchase', 'sale', 'auction'])
     transaction_catagory = serializers.ChoiceField(choices=['local', 'foreign'])
-    payment_status = serializers.ChoiceField(choices=['pending', 'completed'])
+    payment_status = serializers.ChoiceField(choices=['pending', 'completed', 'failed'])
     transaction_date = serializers.DateField()
+    customer_id = serializers.IntegerField(required=False, allow_null=True)
+    company_account_id = serializers.IntegerField(required=False, allow_null=True)
+    auction_id = serializers.IntegerField(required=False, allow_null=True)
     customer_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     seller_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -66,3 +74,22 @@ class CreateOrderSerializer(serializers.Serializer):
     account_number = serializers.CharField(max_length=100, required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
     items = OrderItemCreateSerializer(many=True)
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Customer
+        fields = ['id', 'name', 'email', 'address', 'phone', 'account_number', 'branch_code', 'bank_name', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class CompanyAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyAccount
+        fields = ['id', 'bank_name', 'account_number', 'branch_code', 'account_holder', 'swift_code', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class AuctionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Auction
+        fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']

@@ -15,9 +15,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
-from apps.revenue.models import Car, CarCategory, Order, OrderItem
-from apps.revenue.serializers import CarSerializer, CarCategorySerializer, OrderSerializer, OrderItemSerializer, CreateOrderSerializer
+from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, CompanyAccount, Auction
+from apps.revenue.serializers import CarSerializer, CarCategorySerializer, OrderSerializer, OrderItemSerializer, CreateOrderSerializer, CustomerSerializer, CompanyAccountSerializer, AuctionSerializer
 from apps.expense.models import Expense
+from django.conf import settings
+from apps.account.models import User
 
 class CarCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CarCategorySerializer
@@ -30,6 +32,7 @@ class CarCategoryViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
+                Q(company__icontains=search) |
                 Q(description__icontains=search)
             )
         
@@ -110,9 +113,31 @@ class OrderViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         items_data = data.pop('items')
-        print('############################################')
-        print(items_data)
-        transaction_type = data.get('transaction_type')
+        customer_id = data.pop('customer_id', None)
+        company_account_id = data.pop('company_account_id', None)
+        auction_id = data.pop('auction_id', None)
+
+        # Validate foreign keys
+        customer = None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id, user=request.user)
+            except Customer.DoesNotExist:
+                return Response({'error': 'Customer not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_account = None
+        if company_account_id:
+            try:
+                company_account = CompanyAccount.objects.get(id=company_account_id, user=request.user)
+            except CompanyAccount.DoesNotExist:
+                return Response({'error': 'Company account not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        auction = None
+        if auction_id:
+            try:
+                auction = Auction.objects.get(id=auction_id, user=request.user)
+            except Auction.DoesNotExist:
+                return Response({'error': 'Auction not found'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Move all extra fields into other_details
         other_details = {
@@ -122,7 +147,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             'address': data.pop('address', ''),
             'payment_method': data.pop('payment_method', ''),
             'account_number': data.pop('account_number', ''),
-            'auction_house': data.pop('auction_house', '')  # only applies for auction
+            'my_payment_method': data.pop('my_payment_method', ''),
+            'my_account_number': data.pop('my_account_number', ''),
+            'auction_house': data.pop('auction_house', '')
         }
 
         # Check categories exist
@@ -151,7 +178,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             for item in items_data
         )
 
-        # Create order (only use fields that exist in the model)
+        # Create order
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user,
@@ -162,10 +189,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 transaction_catagory=data['transaction_catagory'],
                 transaction_date=data['transaction_date'],
                 payment_status=data['payment_status'],
-                notes=data.get('notes', '')
+                notes=data.get('notes', ''),
+                customer=customer,
+                company_account=company_account,
+                auction=auction
             )
 
             for item_data in items_data:
+                category = CarCategory.objects.get(id=item_data['category'])
                 car, _ = Car.objects.get_or_create(
                     user=request.user,
                     category_id=item_data['category'],
@@ -185,6 +216,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OrderItem.objects.create(
                     order=order,
                     car=car,
+                    car_category=category,
                     venue=item_data.get('venue', ''),
                     year_type=item_data.get('year', ''),
                     auction_fee=item_data.get('auction_fee', 0),
@@ -200,11 +232,34 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
+    def _add_watermark(self, canvas, doc, text="DRAFT"):
+        canvas.saveState()  # Save current state
+
+        # Set font and color
+        canvas.setFont("Helvetica-Bold", 80)
+        canvas.setFillColor(colors.lightgrey)
+        canvas.setFillAlpha(0.5)  # Lighter watermark
+
+        # Move to center of page
+        width, height = doc.pagesize
+        canvas.translate(width / 2, height / 2)
+
+        # Rotate text diagonally
+        canvas.rotate(45)
+
+        # Draw centered watermark
+        canvas.drawCentredString(0, 0, text)
+
+        canvas.restoreState()
+
     @action(detail=True, methods=['get'])
     def generate_invoice(self, request, pk=None):
         order = self.get_object()
         is_auction = order.transaction_type == 'auction'
-
+        user = User.objects.filter(role='admin').first()
+        if not user:
+            return Response({'error': 'Admin user not found'}, status=404)
+        
         response = HttpResponse(content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="Invoice {order.order_number}.pdf"'
 
@@ -223,17 +278,51 @@ class OrderViewSet(viewsets.ModelViewSet):
         styles = getSampleStyleSheet()
 
         # --------------------------------------------------
-        # Title
+        # Company Details (Dynamic)
         # --------------------------------------------------
+
+        company_name = user.company_name
+        company_address = user.company_address
+        company_phone = user.company_phone
+        company_website = user.company_website
+        company_email = user.company_email
+
+        # Styles
         title_style = ParagraphStyle(
             'InvoiceTitle',
             parent=styles['Heading1'],
             alignment=TA_CENTER,
-            fontSize=16
+            fontSize=18,
+            spaceAfter=6
         )
 
-        elements.append(Paragraph("INVOICE", title_style))
+        company_style = ParagraphStyle(
+            'CompanyStyle',
+            parent=styles['Normal'],
+            alignment=TA_CENTER,
+            fontSize=9,
+            textColor=colors.grey
+        )
+
+        sub_title_style = ParagraphStyle(
+            'SubTitle',
+            parent=styles['Heading2'],
+            alignment=TA_CENTER,
+            fontSize=14,
+            spaceBefore=10,
+            spaceAfter=12
+        )
+
+        # Company Header Section
+        elements.append(Paragraph(company_name, title_style))
+        elements.append(Paragraph(f"Address: {company_address}", company_style))
+        elements.append(Paragraph(f"Phone: {company_phone}", company_style))
+        elements.append(Paragraph(f"Email: {company_email}", company_style))
+        elements.append(Paragraph(company_website, company_style))
         elements.append(Spacer(1, 12))
+
+        elements.append(Paragraph("INVOICE", sub_title_style))
+        elements.append(Spacer(1, 18))
 
         # --------------------------------------------------
         # Basic Info Section
@@ -250,8 +339,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             elements.append(self._build_auction_table(order, doc, styles))
         else:
             elements.append(self._build_standard_table(order, doc, styles))
+        doc.build(
+            elements,
+            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, company_name),
+            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, company_name),
+        )
 
-        doc.build(elements)
         return response
 
 
@@ -282,6 +375,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             if order.transaction_type == 'auction':
                 data.append(['Auction House:', od.get('auction_house', ''), '', '', ''])
+            data.append(['Payment Status:', order.payment_status.capitalize(), '', '', ''])
 
         if od.get('payment_method'):
             data.append([
@@ -312,7 +406,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         small_style = ParagraphStyle(
             'Small',
             parent=styles['Normal'],
-            fontSize=7,
+            fontSize=6,
             leading=9
         )
 
@@ -322,8 +416,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             'Recycling\nFee', 'Auto\nTax', 'Bid\nFee',
             'Bid Fee\nTax', 'Total'
         ]
+        header_style = ParagraphStyle(
+            'HeaderSmall',
+            parent=styles['Normal'],
+            fontSize=6,      # smaller font
+            leading=8,       # line spacing
+            alignment=TA_CENTER,
+            textColor=colors.whitesmoke,
+        )
 
-        data = [header]
+        header_row = [Paragraph(cell, header_style) for cell in header]
+        data = [header_row]
 
         totals = {
             'auction_fee': 0,
@@ -399,6 +502,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('ALIGN', (5, -1), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 1), (-1, -2), 7),  # Data rows
+            ('FONTSIZE', (0, -1), (-1, -1), 7),  # Total row
 
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
         ]))
@@ -411,13 +516,21 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
 
     def _build_standard_table(self, order, doc, styles):
+        header_style = ParagraphStyle(
+            'HeaderSmall',
+            parent=styles['Normal'],
+            fontSize=6,      # smaller font
+            leading=8,       # line spacing
+            alignment=TA_CENTER,
+            textColor=colors.whitesmoke,
+        )
 
         header = [
             'No.', 'Car Name', 'Model', 'Chassis',
             'Year', 'Price', 'Tax', 'Total'
         ]
-
-        data = [header]
+        header_row = [Paragraph(cell, header_style) for cell in header]
+        data = [header_row]
 
         totals = {
             'vehicle_price': 0,
@@ -469,6 +582,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             ('ALIGN', (1, 1), (4, -2), 'LEFT'),
             ('ALIGN', (5, 1), (-1, -2), 'RIGHT'),
+            ('FONTSIZE', (0, 1), (-1, -2), 7),  # Data rows
+            ('FONTSIZE', (0, -1), (-1, -1), 7),  # Total row
 
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
 
@@ -526,36 +641,120 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         ws['A4'] = 'Summary'
         ws['A4'].font = Font(bold=True)
-        ws['A5'] = 'Total Revenue (Sales + Auctions)'
-        ws['B5'] = float(revenue)
-        ws['A6'] = 'Total Cost (Purchases + Expenses)'
-        ws['B6'] = float(cost)
-        ws['A7'] = 'Net Profit'
-        ws['B7'] = float(profit)
-        ws['B7'].font = Font(bold=True)
+        ws['A5'] = 'Currency'
+        ws['B5'] = '$'
+        ws['A6'] = 'Total Revenue (Sales + Auctions)'
+        ws['B6'] = f'$ {float(revenue)}'
+        ws['A7'] = 'Total Cost (Purchases + Expenses)'
+        ws['B7'] = f'$ {float(cost)}'
+        ws['A8'] = 'Net Profit'
+        ws['B8'] = f'$ {float(profit)}'
+        ws['B9'].font = Font(bold=True)
         
-        ws['A9'] = 'Breakdown'
-        ws['A9'].font = Font(bold=True)
-        ws['A10'] = 'Sales'
-        ws['B10'] = float(sales)
-        ws['A11'] = 'Auctions'
-        ws['B11'] = float(auctions)
-        ws['A12'] = 'Purchases'
-        ws['B12'] = float(purchases)
-        ws['A13'] = 'Expenses'
-        ws['B13'] = float(total_expenses)
+        ws['A10'] = 'Breakdown'
+        ws['A10'].font = Font(bold=True)
+        ws['A11'] = 'Sales'
+        ws['B11'] = f'$ {float(sales)}'
+        ws['A12'] = 'Auctions'
+        ws['B12'] = f'$ {float(auctions)}'
+        ws['A13'] = 'Purchases'
+        ws['B13'] = f'$ {float(purchases)}'
+        ws['A14'] = 'Expenses'
+        ws['B14'] = f'$ {float(total_expenses)}'
         
-        ws['A15'] = 'Orders Detail'
-        ws['A15'].font = Font(bold=True)
-        ws.append(['Order No.', 'Type', 'Date', 'Customer', 'Amount'])
+        ws['A16'] = 'Transactions Detail'
+        ws['A16'].font = Font(bold=True)
+        ws.append(['Type', 'Date', 'Payment Status', 'Amount'])
+        
         for order in orders:
-            ws.append([order.order_number, order.transaction_type, order.transaction_date.strftime('%Y-%m-%d'), 
-                      order.customer_name, float(order.total_amount)])
+            ws.append([order.transaction_type.capitalize(), order.transaction_date.strftime('%Y-%m-%d'), 
+                      order.payment_status, f'$ {float(order.total_amount)}'])
+        
+        for exp in expenses:
+            ws.append(['Expense', exp.date.strftime('%Y-%m-%d'), 'completed', f'$ {float(exp.amount)}'])
         
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = f'attachment; filename="Report {start}_{end}.xlsx"'
         wb.save(response)
         return response
+
+
+
+    @action(detail=False, methods=['get'])
+    def reports(self, request):
+        from rest_framework.pagination import PageNumberPagination
+        
+        report_type = request.query_params.get('type', 'orders')
+        period = request.query_params.get('period', 'month')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        payment_status = request.query_params.get('payment_status')
+        search = request.query_params.get('search')
+        page_size = int(request.query_params.get('pageSize', 10))
+        
+        today = datetime.now().date()
+        
+        if start_date and end_date:
+            start = datetime.strptime(start_date, '%Y-%m-%d').date()
+            end = datetime.strptime(end_date, '%Y-%m-%d').date()
+        elif period == 'today':
+            start = end = today
+        elif period == 'month':
+            start = today.replace(day=1)
+            end = today
+        elif period == 'year':
+            start = today.replace(month=1, day=1)
+            end = today
+        else:
+            start = today.replace(day=1)
+            end = today
+        
+        data = []
+        
+        if report_type in ['all', 'expenses']:
+            if period == 'all':
+                expenses = Expense.objects.filter(user=request.user)
+            else:
+                expenses = Expense.objects.filter(user=request.user, date__range=[start, end])
+            if search:
+                expenses = expenses.filter(Q(description__icontains=search))
+            for exp in expenses:
+                data.append({
+                    'transaction_type': 'expense',
+                    'transaction_date': exp.date,
+                    'payment_status': 'completed',
+                    'total_amount': exp.amount
+                })
+        
+        if report_type in ['all', 'orders', 'sales', 'purchases', 'auctions']:
+            if period == 'all':
+                queryset = Order.objects.filter(user=request.user)
+            else:
+                queryset = Order.objects.filter(user=request.user, transaction_date__range=[start, end])
+            
+            if report_type == 'sales':
+                queryset = queryset.filter(transaction_type='sale')
+            elif report_type == 'purchases':
+                queryset = queryset.filter(transaction_type='purchase')
+            elif report_type == 'auctions':
+                queryset = queryset.filter(transaction_type='auction')
+            
+            if payment_status:
+                queryset = queryset.filter(payment_status=payment_status)
+            if search:
+                queryset = queryset.filter(Q(order_number__icontains=search) | Q(customer_name__icontains=search))
+            
+            for order in queryset.values('transaction_type', 'transaction_date', 'payment_status', 'total_amount'):
+                data.append(order)
+        
+        data.sort(key=lambda x: x['transaction_date'], reverse=True)
+        
+        paginator = PageNumberPagination()
+        paginator.page_size = page_size
+        paginated = paginator.paginate_queryset(data, request)
+        
+        return paginator.get_paginated_response(paginated)
+
 
 class OrderItemViewSet(viewsets.ModelViewSet):
     serializer_class = OrderItemSerializer
@@ -563,3 +762,56 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return OrderItem.objects.filter(order__user=self.request.user)
+
+
+class CustomerViewSet(viewsets.ModelViewSet):
+    serializer_class = CustomerSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Customer.objects.filter(user=self.request.user)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone__icontains=search)
+            )
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class CompanyAccountViewSet(viewsets.ModelViewSet):
+    serializer_class = CompanyAccountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = CompanyAccount.objects.filter(user=self.request.user)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(bank_name__icontains=search) |
+                Q(account_number__icontains=search)
+            )
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class AuctionViewSet(viewsets.ModelViewSet):
+    serializer_class = AuctionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Auction.objects.filter(user=self.request.user)
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(description__icontains=search)
+            )
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
-
+import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,8 +25,12 @@ SECRET_KEY = 'django-insecure-hk(26-nvi2zn__ja9i!39bhnrf1iu%#x3jrg9sjk98%b$4y*$g
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['huzaifanasirfab.pythonanywhere.com', 'https://smart-ledgers.vercel.app']
 
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = ['https://smart-ledgers.vercel.app']
+CORS_ALLOWED_ORIGINS = ['https://smart-ledgers.vercel.app']
+APPEND_SLASH=True
 
 # Application definition
 
@@ -143,5 +147,5 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'project.pagination.CustomPageNumberPagination',
     'PAGE_SIZE': 10,
 }
-
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 CORS_ALLOW_ALL_ORIGINS = True
