@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-hk(26-nvi2zn__ja9i!39bhnrf1iu%#x3jrg9sjk98%b$4y*$g
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['huzaifanasirfab.pythonanywhere.com', 'https://smart-ledgers.vercel.app']
+ALLOWED_HOSTS = ['huzaifanasirfab.pythonanywhere.com', 'https://smart-ledgers.vercel.app', '127.0.0.1', 'localhost']
 
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = ['https://smart-ledgers.vercel.app']

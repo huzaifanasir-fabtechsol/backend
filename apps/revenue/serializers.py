@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, CompanyAccount, Auction
+from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction
 
 class CarCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,14 +9,15 @@ class CarCategorySerializer(serializers.ModelSerializer):
 
 class CarSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
+    company_name = serializers.CharField(source='category.company', read_only=True)
     
     class Meta:
         model = Car
-        fields = ['id', 'category', 'category_name', 'name', 'description', 'model', 'chassis_number', 'year', 'created_at', 'updated_at']
+        fields = ['id', 'category', 'category_name', 'company_name', 'description', 'model', 'chassis_number', 'year', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    car_name = serializers.CharField(source='car.name', read_only=True)
+    car_name = serializers.CharField(source='car.category.name', read_only=True)
     
     class Meta:
         model = OrderItem
@@ -26,7 +27,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderItemCreateSerializer(serializers.Serializer):
     category = serializers.IntegerField()
-    name = serializers.CharField(max_length=100)
+    # name = serializers.CharField(max_length=100)
     model = serializers.CharField(max_length=100)
     chassis_number = serializers.CharField(max_length=50)
     year = serializers.IntegerField()
@@ -45,13 +46,14 @@ class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     auction_name = serializers.CharField(source='auction.name', read_only=True)
     customer_name_obj = serializers.CharField(source='customer.name', read_only=True)
+    saler_name_obj = serializers.CharField(source='saler.name', read_only=True)
     company_account_name = serializers.CharField(source='company_account.bank_name', read_only=True)
     
     class Meta:
         model = Order
         fields = ['id', 'order_number', 'transaction_type', 'transaction_date', 'payment_status', 'customer_name', 
                   'total_amount', 'notes', 'items', 'other_details', 'auction', 'auction_name', 
-                  'customer', 'customer_name_obj', 'company_account', 'company_account_name', 
+                  'customer', 'customer_name_obj', 'saler', 'saler_name_obj', 'company_account', 'company_account_name',
                   'created_at', 'updated_at']
         read_only_fields = ['order_number', 'created_at', 'updated_at']
 
@@ -63,9 +65,11 @@ class CreateOrderSerializer(serializers.Serializer):
     payment_status = serializers.ChoiceField(choices=['pending', 'completed', 'failed'])
     transaction_date = serializers.DateField()
     customer_id = serializers.IntegerField(required=False, allow_null=True)
+    saler_id = serializers.IntegerField(required=False, allow_null=True)
     company_account_id = serializers.IntegerField(required=False, allow_null=True)
     auction_id = serializers.IntegerField(required=False, allow_null=True)
     customer_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    saler_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     seller_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=50, required=False, allow_blank=True)
     address = serializers.CharField(max_length=500, required=False, allow_blank=True)
@@ -79,7 +83,13 @@ class CreateOrderSerializer(serializers.Serializer):
 class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
-        fields = ['id', 'name', 'email', 'address', 'phone', 'account_number', 'branch_code', 'bank_name', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'email', 'address', 'phone', 'account_number', 'branch_code', 'bank_name', 'swift_code', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class SalerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Saler
+        fields = ['id', 'name', 'email', 'address', 'phone', 'account_number', 'branch_code', 'bank_name', 'swift_code', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 class CompanyAccountSerializer(serializers.ModelSerializer):

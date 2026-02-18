@@ -1,5 +1,5 @@
 from django.contrib import admin
-from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, CompanyAccount, Auction
+from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, Saler, CompanyAccount, Auction
 
 @admin.register(CarCategory)
 class CarCategoryAdmin(admin.ModelAdmin):
@@ -8,8 +8,8 @@ class CarCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
-    list_display = ['name', 'model', 'chassis_number', 'year', 'category', 'user', 'created_at']
-    search_fields = ['name', 'model', 'chassis_number']
+    list_display = ['model', 'chassis_number', 'year', 'category', 'user', 'created_at']
+    search_fields = ['model', 'chassis_number']
     list_filter = ['year', 'category']
 
 class OrderItemInline(admin.TabularInline):
@@ -25,6 +25,11 @@ class OrderAdmin(admin.ModelAdmin):
 
 @admin.register(Customer)
 class CustomerAdmin(admin.ModelAdmin):
+    list_display = ['name', 'email', 'phone', 'bank_name', 'user', 'created_at']
+    search_fields = ['name', 'email', 'phone']
+
+@admin.register(Saler)
+class SalerAdmin(admin.ModelAdmin):
     list_display = ['name', 'email', 'phone', 'bank_name', 'user', 'created_at']
     search_fields = ['name', 'email', 'phone']
 

@@ -2,8 +2,8 @@ from django.db import models
 from apps.account.models import BaseModel, User
 
 class CarCategory(BaseModel):
-    name = models.CharField(max_length=100)
-    company = models.CharField(max_length=200, blank=True)
+    name = models.CharField(max_length=100, unique=True)
+    company = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='car_categories')
 
@@ -16,7 +16,7 @@ class CarCategory(BaseModel):
 
 class Car(BaseModel):
     category = models.ForeignKey(CarCategory, on_delete=models.SET_NULL, null=True, related_name='cars')
-    name = models.CharField(max_length=100)
+    # name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     model = models.CharField(max_length=100)
     chassis_number = models.CharField(max_length=50, unique=True)
@@ -57,6 +57,7 @@ class Order(BaseModel):
     notes = models.TextField(blank=True)
     auction = models.ForeignKey('Auction', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    saler = models.ForeignKey('Saler', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     company_account = models.ForeignKey('CompanyAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
 
@@ -87,7 +88,7 @@ class OrderItem(BaseModel):
         db_table = 'order_items'
 
     def __str__(self):
-        return f"{self.order.order_number} - {self.car.name}"
+        return f"{self.order.order_number} - {self.car.category}"
 
 class Customer(BaseModel):
     name = models.CharField(max_length=200)
@@ -97,10 +98,28 @@ class Customer(BaseModel):
     account_number = models.CharField(max_length=100)
     branch_code = models.CharField(max_length=50)
     bank_name = models.CharField(max_length=200)
+    swift_code = models.CharField(max_length=50, blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customers')
 
     class Meta:
         db_table = 'customers'
+
+    def __str__(self):
+        return self.name
+
+class Saler(BaseModel):
+    name = models.CharField(max_length=200)
+    email = models.EmailField()
+    address = models.TextField()
+    phone = models.CharField(max_length=50)
+    account_number = models.CharField(max_length=100)
+    branch_code = models.CharField(max_length=50)
+    bank_name = models.CharField(max_length=200)
+    swift_code = models.CharField(max_length=50, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='salers')
+
+    class Meta:
+        db_table = 'salers'
 
     def __str__(self):
         return self.name
