@@ -15,8 +15,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
-from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction
-from apps.revenue.serializers import CarSerializer, CarCategorySerializer, OrderSerializer, OrderItemSerializer, CreateOrderSerializer, CustomerSerializer, SalerSerializer, CompanyAccountSerializer, AuctionSerializer
+from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction, Transaction
+from apps.revenue.serializers import CarSerializer, CarCategorySerializer, OrderSerializer, OrderItemSerializer, CreateOrderSerializer, CustomerSerializer, SalerSerializer, CompanyAccountSerializer, AuctionSerializer, TransactionSerializer
 from apps.expense.models import Expense
 from django.conf import settings
 from apps.account.models import User
@@ -117,6 +117,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         saler_id = data.pop('saler_id', None)
         company_account_id = data.pop('company_account_id', None)
         auction_id = data.pop('auction_id', None)
+        transaction_id = data.pop('transaction', None)
 
         # Validate foreign keys
         customer = None
@@ -146,6 +147,13 @@ class OrderViewSet(viewsets.ModelViewSet):
                 auction = Auction.objects.get(id=auction_id, user=request.user)
             except Auction.DoesNotExist:
                 return Response({'error': 'Auction not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        transaction_obj = None
+        if transaction_id:
+            try:
+                transaction_obj = Transaction.objects.get(id=transaction_id, user=request.user)
+            except Transaction.DoesNotExist:
+                return Response({'error': 'Transaction not found'}, status=status.HTTP_400_BAD_REQUEST)
 
         if data['transaction_type'] == 'sale' and not customer:
             return Response({'error': 'Customer is required for sale orders'}, status=status.HTTP_400_BAD_REQUEST)
@@ -210,7 +218,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 customer=customer if data['transaction_type'] in ['sale', 'auction'] else None,
                 saler=saler if data['transaction_type'] == 'purchase' else None,
                 company_account=company_account,
-                auction=auction
+                auction=auction,
+                transaction=transaction_obj
             )
 
             for item_data in items_data:
@@ -345,50 +354,79 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
 
     def _build_info_table(self, order, styles):
-
         od = order.other_details or {}
-
         data = [
             ['Transaction Type:', order.get_transaction_type_display(),
             'Category:', order.get_transaction_catagory_display()],
             ['Payment Status:', order.payment_status.capitalize(), '', ''],
         ]
 
+        # Customer/Saler details based on transaction type
         if order.transaction_type == 'purchase':
-            data.append(['Saler:', od.get('saler_name', ''),
-                        'Phone:', od.get('phone', '')])
-            data.append(['Address:', od.get('address', ''), '', ''])
+            if order.saler:
+                data.append(['Saler:', order.saler.name, 'Phone:', order.saler.phone])
+                data.append(['Address:', order.saler.address, '', ''])
+            else:
+                data.append(['Saler:', od.get('saler_name', ''), 'Phone:', od.get('phone', '')])
+                data.append(['Address:', od.get('address', ''), '', ''])
         elif order.transaction_type in ['sale', 'auction']:
-            data.append(['Customer:', od.get('customer_name', ''),
-                        'Phone:', od.get('phone', '')])
-            data.append(['Address:', od.get('address', ''), '', ''])
+            if order.customer:
+                data.append(['Customer:', order.customer.name, 'Phone:', order.customer.phone])
+                data.append(['Address:', order.customer.address, '', ''])
+            else:
+                data.append(['Customer:', od.get('customer_name', ''), 'Phone:', od.get('phone', '')])
+                data.append(['Address:', od.get('address', ''), '', ''])
 
-        if order.company_account:
-            data.append(['Bank Name:', order.company_account.bank_name,
+        # Payment method info
+        if order.transaction_type == 'purchase':
+            payment_method = od.get('payment_method', '')
+            account_number = od.get('account_number', '')
+            if payment_method:
+                data.append(['Payment Method:', payment_method, 'Account No:', account_number])
+        elif order.transaction_type in ['sale', 'auction']:
+            my_payment_method = od.get('my_payment_method', '')
+            my_account_number = od.get('my_account_number', '')
+            if my_payment_method:
+                data.append(['Payment Method:', my_payment_method, 'Account No:', my_account_number])
+
+        # Bank details - Company account (for sales/auctions)
+        if order.transaction_type in ['sale', 'auction'] and order.company_account:
+            data.append(['My Bank:', order.company_account.bank_name,
                         'Account No:', order.company_account.account_number])
             data.append(['SWIFT Code:', order.company_account.swift_code,
                         'Branch Code:', order.company_account.branch_code])
-            
-        if order.customer:
-            data.append(['Bank Name:', order.customer.bank_name,
+
+        # Bank details - Customer (for sales/auctions)
+        if order.transaction_type in ['sale', 'auction'] and order.customer:
+            data.append(['Customer Bank:', order.customer.bank_name,
                         'Account No:', order.customer.account_number])
-            data.append(['SWIFT Code:', order.customer.swift_code,
-                        'Branch Code:', order.customer.branch_code])
-        if order.saler:
-            data.append(['Bank Name:', order.saler.bank_name,
+            if order.customer.swift_code:
+                data.append(['SWIFT Code:', order.customer.swift_code,
+                            'Branch Code:', order.customer.branch_code])
+
+        # Bank details - Saler (for purchases)
+        if order.transaction_type == 'purchase' and order.saler:
+            data.append(['Saler Bank:', order.saler.bank_name,
                         'Account No:', order.saler.account_number])
-            data.append(['SWIFT Code:', order.saler.swift_code,
-                        'Branch Code:', order.saler.branch_code])
+            if order.saler.swift_code:
+                data.append(['SWIFT Code:', order.saler.swift_code,
+                            'Branch Code:', order.saler.branch_code])
 
-        table = Table(data, colWidths=[120, 200, 120, 150])
+        # Bank details - Company account (for purchases)
+        if order.transaction_type == 'purchase' and order.company_account:
+            data.append(['My Bank:', order.company_account.bank_name,
+                        'Account No:', order.company_account.account_number])
+            data.append(['SWIFT Code:', order.company_account.swift_code,
+                        'Branch Code:', order.company_account.branch_code])
 
+        table = Table(data, colWidths=[100, 180, 100, 160])
         table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
             ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
             ('GRID', (0, 0), (-1, -1), 0.3, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
-
         return table
 
     # ======================================================
@@ -484,28 +522,25 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
 
     def _build_standard_table(self, order, doc, styles):
-
-        header = ['No.', 'Car Name', 'Model', 'Chassis',
-                'Year', 'Price', 'Tax', 'Total']
-
+        header = ['No.', 'Car Name', 'Model', 'Chassis', 'Year', 'Price', 'Tax', 'Total']
         data = [header]
 
-        totals = {
-            'vehicle_price': 0,
-            'consumption_tax': 0,
-            'subtotal': 0
-        }
+        totals = {'vehicle_price': 0, 'consumption_tax': 0, 'subtotal': 0}
 
         for idx, item in enumerate(order.items.all(), 1):
+            car_name = str(item.car.category) if item.car.category else ''
+            model = item.car.model[:15] if len(item.car.model) > 15 else item.car.model
+            chassis = item.car.chassis_number[:12] if len(item.car.chassis_number) > 12 else item.car.chassis_number
+            
             data.append([
                 str(idx),
-                item.car.category,
-                item.car.model,
-                item.car.chassis_number,
+                car_name,
+                model,
+                chassis,
                 str(item.car.year),
-                f'{item.vehicle_price:,.2f}',
-                f'{item.consumption_tax:,.2f}',
-                f'{item.subtotal:,.2f}',
+                f'{item.vehicle_price:,.0f}',
+                f'{item.consumption_tax:,.0f}',
+                f'{item.subtotal:,.0f}',
             ])
 
             totals['vehicle_price'] += item.vehicle_price
@@ -514,27 +549,27 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         data.append([
             '', '', '', '', 'TOTAL',
-            f'{totals["vehicle_price"]:,.2f}',
-            f'{totals["consumption_tax"]:,.2f}',
-            f'{totals["subtotal"]:,.2f}',
+            f'{totals["vehicle_price"]:,.0f}',
+            f'{totals["consumption_tax"]:,.0f}',
+            f'{totals["subtotal"]:,.0f}',
         ])
 
-        col_widths = [30, 110, 90, 110, 50, 80, 80, 90]
-
+        col_widths = [25, 95, 85, 95, 40, 75, 75, 80]
         table = Table(data, colWidths=col_widths, repeatRows=1)
 
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkgrey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-
             ('GRID', (0, 0), (-1, -1), 0.4, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
 
         return table
@@ -790,3 +825,333 @@ class AuctionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+class TransactionViewSet(viewsets.ModelViewSet):
+    serializer_class = TransactionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Transaction.objects.filter(user=self.request.user)
+        search = self.request.query_params.get('search')
+        date = self.request.query_params.get('date')
+        
+        if search:
+            queryset = queryset.filter(
+                Q(description__icontains=search) |
+                Q(notes__icontains=search)
+            )
+        if date:
+            queryset = queryset.filter(date=date)
+            
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def bulk_import(self, request):
+        from datetime import datetime
+        import csv
+        from io import StringIO
+        import requests
+        
+        csv_data = request.data.get('csv_data', '')
+        sheet_url = request.data.get('sheet_url', '')
+        
+        if not csv_data and not sheet_url:
+            return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+        
+        try:
+            # If Google Sheets URL is provided, fetch CSV data
+            if sheet_url:
+                # Handle published CSV URLs directly
+                if 'pub?output=csv' in sheet_url:
+                    csv_url = sheet_url
+                else:
+                    # Extract sheet ID from various Google Sheets URL formats
+                    sheet_id = None
+                    gid = '0'  # default sheet
+                    
+                    if '/d/' in sheet_url:
+                        # Extract sheet ID from URL like: https://docs.google.com/spreadsheets/d/ID/edit
+                        sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+                        if 'gid=' in sheet_url:
+                            gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+                    
+                    if not sheet_id:
+                        return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+                    
+                    # Construct proper CSV export URL
+                    csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+                
+                try:
+                    response = requests.get(csv_url, timeout=30)
+                    response.raise_for_status()
+                    response.encoding = 'utf-8'  # Ensure proper UTF-8 encoding
+                    csv_data = response.text
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 400:
+                        return Response({
+                            'error': 'Sheet access denied. Please make your Google Sheet public: Share > Anyone with the link > Viewer'
+                        }, status=400)
+                    raise
+            
+            csv_file = StringIO(csv_data)
+            reader = csv.reader(csv_file)
+            
+            # Skip header row
+            next(reader, None)
+            
+            transactions = []
+            for row in reader:
+                if len(row) < 6:  # Skip incomplete rows
+                    continue
+                    
+                # Parse date (年月日)
+                date_str = row[0].strip()
+                try:
+                    # Try multiple date formats
+                    for fmt in [
+                            '%Y/%m/%d',
+                            '%Y-%m-%d',
+                            '%d/%m/%Y',
+                            '%m/%d/%Y',
+                            '%b. %d, %Y',
+                            '%Y%m%d', 
+                            '%m/%d/%y %H:%M',
+                            '%m/%d/%Y %H:%M',
+                        ]:
+
+                        try:
+                            date_obj = datetime.strptime(date_str, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        continue  # Skip if no format matches
+                except:
+                    pass
+                
+                # Parse withdraw (お引出し)
+                withdraw = 0
+                if row[3].strip():
+                    try:
+                        if not row[3].strip() == '-':
+                            withdraw = float(row[3].strip())
+                    except ValueError:
+                        withdraw = 0
+                
+                # Parse deposit (お預入れ)
+                deposit = 0
+                if row[2].strip():
+                    try:
+                        if not row[2].strip() == '-':
+                            deposit = float(row[2].strip())
+                    except ValueError:
+                        deposit = 0
+                
+                # Parse description (お取り扱い内容)
+                description = row[5].strip()[:500]  # Limit to 500 chars
+                
+                # Parse balance (残高)
+                balance = 0
+                if row[6].strip():
+                    try:
+                        balance = float(row[6].strip())
+                    except ValueError:
+                        balance = 0
+                
+                # Skip メモ column (row[5]) as requested
+                # Notes from ラベル column (row[6] if exists)
+                notes = ''
+                if len(row) > 3 and row[4].strip():
+                    notes = row[4].strip()
+
+                transactionId = ''
+                if len(row) > 6 and row[1].strip():
+                    transactionId = row[1].strip()
+                company_account = None
+                if len(row) > 5 and row[7].strip():
+                    try:
+                        account_id = int(row[7].strip())
+                        company_account = CompanyAccount.objects.filter(id=account_id).first()
+                    except ValueError:
+                        company_account = None
+                transactions.append(Transaction(
+                    user=request.user,
+                    date=date_obj,
+                    withdraw=withdraw,
+                    deposit=deposit,
+                    balance=balance,
+                    description=description,
+                    notes=notes,
+                    company_account=company_account,
+                    transaction_id=transactionId
+                ))
+            
+            # Bulk create transactions
+            Transaction.objects.bulk_create(transactions, ignore_conflicts=True)
+            
+            return Response({
+                'message': f'Successfully imported {len(transactions)} transactions',
+                'count': len(transactions)
+            })
+            
+        except requests.RequestException as e:
+            return Response({'error': f'Failed to fetch data from URL: {str(e)}'}, status=400)
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+        
+    # @action(detail=False, methods=['post'])
+    # def bulk_import(self, request):
+    #     from datetime import datetime
+    #     import csv
+    #     from io import StringIO
+    #     import requests
+        
+    #     csv_data = request.data.get('csv_data', '')
+    #     sheet_url = request.data.get('sheet_url', '')
+        
+    #     if not csv_data and not sheet_url:
+    #         return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+        
+    #     try:
+    #         # If Google Sheets URL is provided, fetch CSV data
+    #         if sheet_url:
+    #             # Handle published CSV URLs directly
+    #             if 'pub?output=csv' in sheet_url:
+    #                 csv_url = sheet_url
+    #             else:
+    #                 # Extract sheet ID from various Google Sheets URL formats
+    #                 sheet_id = None
+    #                 gid = '0'  # default sheet
+                    
+    #                 if '/d/' in sheet_url:
+    #                     # Extract sheet ID from URL like: https://docs.google.com/spreadsheets/d/ID/edit
+    #                     sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+    #                     if 'gid=' in sheet_url:
+    #                         gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+                    
+    #                 if not sheet_id:
+    #                     return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+                    
+    #                 # Construct proper CSV export URL
+    #                 csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+                
+    #             try:
+    #                 response = requests.get(csv_url, timeout=30)
+    #                 response.raise_for_status()
+    #                 response.encoding = 'utf-8'  # Ensure proper UTF-8 encoding
+    #                 csv_data = response.text
+    #             except requests.exceptions.HTTPError as e:
+    #                 if e.response.status_code == 400:
+    #                     return Response({
+    #                         'error': 'Sheet access denied. Please make your Google Sheet public: Share > Anyone with the link > Viewer'
+    #                     }, status=400)
+    #                 raise
+            
+    #         csv_file = StringIO(csv_data)
+    #         reader = csv.reader(csv_file)
+            
+    #         # Skip header row
+    #         next(reader, None)
+            
+    #         transactions = []
+    #         for row in reader:
+    #             if len(row) < 6:  # Skip incomplete rows
+    #                 continue
+                    
+    #             # Parse date (年月日)
+    #             date_str = row[0].strip()
+    #             try:
+    #                 # Try multiple date formats
+    #                 for fmt in [
+    #                         '%Y/%m/%d',
+    #                         '%Y-%m-%d',
+    #                         '%d/%m/%Y',
+    #                         '%m/%d/%Y',
+    #                         '%b. %d, %Y',
+    #                         '%Y%m%d', 
+    #                         '%m/%d/%y %H:%M',
+    #                         '%m/%d/%Y %H:%M',
+    #                     ]:
+
+    #                     try:
+    #                         date_obj = datetime.strptime(date_str, fmt).date()
+    #                         break
+    #                     except ValueError:
+    #                         continue
+    #                 else:
+    #                     continue  # Skip if no format matches
+    #             except:
+    #                 pass
+                
+    #             # Parse withdraw (お引出し)
+    #             withdraw = 0
+    #             if row[1].strip():
+    #                 try:
+    #                     if not row[1].strip() == '-':
+    #                         withdraw = float(row[1].strip())
+    #                 except ValueError:
+    #                     withdraw = 0
+                
+    #             # Parse deposit (お預入れ)
+    #             deposit = 0
+    #             if row[2].strip():
+    #                 try:
+    #                     if not row[2].strip() == '-':
+    #                         deposit = float(row[2].strip())
+    #                 except ValueError:
+    #                     deposit = 0
+                
+    #             # Parse description (お取り扱い内容)
+    #             description = row[8].strip()[:500]  # Limit to 500 chars
+                
+    #             # Parse balance (残高)
+    #             balance = 0
+    #             # if row[4].strip():
+    #             #     try:
+    #             #         balance = float(row[4].strip())
+    #             #     except ValueError:
+    #             #         balance = 0
+                
+    #             # Skip メモ column (row[5]) as requested
+    #             # Notes from ラベル column (row[6] if exists)
+    #             notes = ''
+    #             # if len(row) > 6 and row[6].strip():
+    #             #     notes = row[6].strip()
+
+    #             transactionId = ''
+    #             if len(row) > 6 and row[12].strip():
+    #                 transactionId = row[12].strip()
+    #             company_account = None
+    #             if len(row) > 5 and row[13].strip():
+    #                 try:
+    #                     account_id = int(row[13].strip())
+    #                     company_account = CompanyAccount.objects.filter(id=account_id).first()
+    #                 except ValueError:
+    #                     company_account = None
+    #             transactions.append(Transaction(
+    #                 user=request.user,
+    #                 date=date_obj,
+    #                 withdraw=withdraw,
+    #                 deposit=deposit,
+    #                 balance=balance,
+    #                 description=description,
+    #                 notes=notes,
+    #                 company_account=company_account,
+    #                 transaction_id=transactionId
+    #             ))
+            
+    #         # Bulk create transactions
+    #         Transaction.objects.bulk_create(transactions, ignore_conflicts=True)
+            
+    #         return Response({
+    #             'message': f'Successfully imported {len(transactions)} transactions',
+    #             'count': len(transactions)
+    #         })
+            
+    #     except requests.RequestException as e:
+    #         return Response({'error': f'Failed to fetch data from URL: {str(e)}'}, status=400)
+    #     except Exception as e:
+    #         return Response({'error': str(e)}, status=400)

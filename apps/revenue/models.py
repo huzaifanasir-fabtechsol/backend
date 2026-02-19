@@ -59,6 +59,7 @@ class Order(BaseModel):
     customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     saler = models.ForeignKey('Saler', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     company_account = models.ForeignKey('CompanyAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    transaction = models.ForeignKey('Transaction', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
 
     class Meta:
@@ -148,3 +149,21 @@ class Auction(BaseModel):
 
     def __str__(self):
         return self.name
+
+class Transaction(BaseModel):
+    date = models.DateField()
+    transaction_id = models.CharField(max_length=500, null=True, blank=True)
+    withdraw = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    balance = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=500)
+    notes = models.TextField(blank=True)
+    company_account = models.ForeignKey('CompanyAccount', on_delete=models.CASCADE, related_name='transactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
+
+    class Meta:
+        db_table = 'transactions'
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.date} - {self.description}"

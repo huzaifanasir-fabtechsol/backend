@@ -19,6 +19,8 @@ class Expense(BaseModel):
     description = models.TextField(blank=True)
     date = models.DateField()
     category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True, related_name='expenses')
+    transaction = models.ForeignKey('revenue.Transaction', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    restaurant = models.ForeignKey('Restaurant', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
 
     class Meta:
@@ -27,3 +29,15 @@ class Expense(BaseModel):
 
     def __str__(self):
         return f"{self.title} - {self.amount}"
+
+class Restaurant(BaseModel):
+    name = models.CharField(max_length=200)
+    location = models.CharField(max_length=300)
+    description = models.TextField(blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='restaurants')
+
+    class Meta:
+        db_table = 'restaurants'
+
+    def __str__(self):
+        return self.name

@@ -31,6 +31,7 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = ['https://smart-ledgers.vercel.app']
 CORS_ALLOWED_ORIGINS = ['https://smart-ledgers.vercel.app']
 APPEND_SLASH=True
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 50000
 
 # Application definition
 

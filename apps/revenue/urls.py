@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from apps.revenue.views import CarCategoryViewSet, CarViewSet, OrderViewSet, OrderItemViewSet, CustomerViewSet, SalerViewSet, CompanyAccountViewSet, AuctionViewSet
+from apps.revenue.views import CarCategoryViewSet, CarViewSet, OrderViewSet, OrderItemViewSet, CustomerViewSet, SalerViewSet, CompanyAccountViewSet, AuctionViewSet, TransactionViewSet
 from apps.revenue.translate_views import translate_text, translate_batch
 
 router = DefaultRouter()
@@ -12,6 +12,7 @@ router.register('customers', CustomerViewSet, basename='customer')
 router.register('salers', SalerViewSet, basename='saler')
 router.register('company-accounts', CompanyAccountViewSet, basename='company-account')
 router.register('auctions', AuctionViewSet, basename='auction')
+router.register('transactions', TransactionViewSet, basename='transaction')
 
 urlpatterns = [
     path('', include(router.urls)),

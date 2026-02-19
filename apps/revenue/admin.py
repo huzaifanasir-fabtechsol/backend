@@ -1,5 +1,5 @@
 from django.contrib import admin
-from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, Saler, CompanyAccount, Auction
+from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, Saler, CompanyAccount, Auction, Transaction
 
 @admin.register(CarCategory)
 class CarCategoryAdmin(admin.ModelAdmin):
@@ -42,3 +42,9 @@ class CompanyAccountAdmin(admin.ModelAdmin):
 class AuctionAdmin(admin.ModelAdmin):
     list_display = ['name', 'user', 'created_at']
     search_fields = ['name', 'description']
+
+@admin.register(Transaction)
+class TransactionAdmin(admin.ModelAdmin):
+    list_display = ['id', 'company_account', 'date', 'description', 'withdraw', 'deposit', 'balance', 'user', 'created_at']
+    search_fields = ['description', 'notes', 'company_account']
+    list_filter = ['date', 'user', 'company_account']

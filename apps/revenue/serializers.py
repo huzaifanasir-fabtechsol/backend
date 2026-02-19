@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction
+from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction, Transaction
 
 class CarCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,14 +48,25 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name_obj = serializers.CharField(source='customer.name', read_only=True)
     saler_name_obj = serializers.CharField(source='saler.name', read_only=True)
     company_account_name = serializers.CharField(source='company_account.bank_name', read_only=True)
+    transaction = serializers.SerializerMethodField()
     
     class Meta:
         model = Order
-        fields = ['id', 'order_number', 'transaction_type', 'transaction_date', 'payment_status', 'customer_name', 
+        fields = ['id', 'order_number', 'transaction_type', 'transaction_catagory', 'transaction_date', 'payment_status', 'customer_name', 
                   'total_amount', 'notes', 'items', 'other_details', 'auction', 'auction_name', 
                   'customer', 'customer_name_obj', 'saler', 'saler_name_obj', 'company_account', 'company_account_name',
-                  'created_at', 'updated_at']
+                  'transaction', 'created_at', 'updated_at']
         read_only_fields = ['order_number', 'created_at', 'updated_at']
+    
+    def get_transaction(self, obj):
+        if obj.transaction:
+            return {
+                'id': obj.transaction.id,
+                'description': obj.transaction.description,
+                'withdraw': obj.transaction.withdraw,
+                'date': obj.transaction.date
+            }
+        return None
 
 
 # ----------------- Create Order -----------------
@@ -68,6 +79,7 @@ class CreateOrderSerializer(serializers.Serializer):
     saler_id = serializers.IntegerField(required=False, allow_null=True)
     company_account_id = serializers.IntegerField(required=False, allow_null=True)
     auction_id = serializers.IntegerField(required=False, allow_null=True)
+    transaction = serializers.IntegerField(required=False, allow_null=True)
     customer_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     saler_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     seller_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
@@ -102,4 +114,10 @@ class AuctionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Auction
         fields = ['id', 'name', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+class TransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transaction
+        fields = ['id', 'date', 'withdraw', 'deposit', 'balance', 'description', 'notes', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
