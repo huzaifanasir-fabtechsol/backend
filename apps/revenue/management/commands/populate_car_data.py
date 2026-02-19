@@ -1,19 +1,21 @@
 from django.core.management.base import BaseCommand
 from apps.revenue.models import CarCategory, Auction
 from apps.account.models import User
-from django.db import IntegrityError
 
 class Command(BaseCommand):
     help = 'Populate car categories and auctions'
 
     def handle(self, *args, **options):
-        # Get first user or create a default one
         user = User.objects.filter(email='user@example.com').first()
         if not user:
             self.stdout.write(self.style.ERROR('No users found. Please create a user first.'))
             return
 
-        # Car categories data
+        # Delete existing data
+        deleted_categories = CarCategory.objects.all().delete()[0]
+        deleted_auctions = Auction.objects.all().delete()[0]
+        self.stdout.write(self.style.WARNING(f'Deleted {deleted_categories} car categories and {deleted_auctions} auctions'))
+
         car_data = {
             'TOYOTA': [
                 'Toyota Yaris', 'Toyota Yaris Cross', 'Toyota Corolla Hatchback', 'Toyota Glanza (India)',
@@ -91,7 +93,6 @@ class Command(BaseCommand):
             ]
         }
 
-        # Auction data
         auctions = [
             'USS – Used Car System Solutions', 'TAA – Toyota Auto Auction', 'JU Group',
             'ARAI AUCTION', 'CAA', 'HAA', 'NAA – Nissan Auto Auction', 'ZIP Osaka',
@@ -109,48 +110,20 @@ class Command(BaseCommand):
             'JU Gunma', 'USS Kyushu', 'JU Tochigi', 'USS Okayama', 'JU Miyagi'
         ]
 
-        # Create car categories - handle unique company constraint
         created_categories = 0
-        companies_created = set()
-        
         for company, models in car_data.items():
-            # First, create or get the company entry
-            if company not in companies_created:
-                try:
-                    company_category, created = CarCategory.objects.get_or_create(
-                        company=company,
-                        defaults={'name': f'{company} Brand', 'user': user}
-                    )
-                    if created:
-                        created_categories += 1
-                        companies_created.add(company)
-                except IntegrityError:
-                    # Company already exists, get it
-                    company_category = CarCategory.objects.filter(company=company).first()
-                    companies_created.add(company)
-            
-            # Then create individual car models
             for model in models:
-                try:
-                    category, created = CarCategory.objects.get_or_create(
-                        name=model,
-                        defaults={'company': f'{company}_{model[:20]}', 'user': user}
-                    )
-                    if created:
-                        created_categories += 1
-                except IntegrityError:
-                    # Skip if already exists
-                    continue
+                CarCategory.objects.create(
+                    name=model,
+                    company=f'{company}_{model[:20]}',
+                    user=user
+                )
+                created_categories += 1
 
-        # Create auctions
         created_auctions = 0
         for auction_name in auctions:
-            auction, created = Auction.objects.get_or_create(
-                name=auction_name,
-                defaults={'user': user}
-            )
-            if created:
-                created_auctions += 1
+            Auction.objects.create(name=auction_name, user=user)
+            created_auctions += 1
 
         self.stdout.write(
             self.style.SUCCESS(

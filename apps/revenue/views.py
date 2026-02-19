@@ -640,25 +640,25 @@ class OrderViewSet(viewsets.ModelViewSet):
         ws['A4'] = 'Summary'
         ws['A4'].font = Font(bold=True)
         ws['A5'] = 'Currency'
-        ws['B5'] = '$'
+        ws['B5'] = '¥'
         ws['A6'] = 'Total Revenue (Sales + Auctions)'
-        ws['B6'] = f'$ {float(revenue)}'
+        ws['B6'] = f'¥ {float(revenue)}'
         ws['A7'] = 'Total Cost (Purchases + Expenses)'
-        ws['B7'] = f'$ {float(cost)}'
+        ws['B7'] = f'¥ {float(cost)}'
         ws['A8'] = 'Net Profit'
-        ws['B8'] = f'$ {float(profit)}'
+        ws['B8'] = f'¥ {float(profit)}'
         ws['B9'].font = Font(bold=True)
         
         ws['A10'] = 'Breakdown'
         ws['A10'].font = Font(bold=True)
         ws['A11'] = 'Sales'
-        ws['B11'] = f'$ {float(sales)}'
+        ws['B11'] = f'¥ {float(sales)}'
         ws['A12'] = 'Auctions'
-        ws['B12'] = f'$ {float(auctions)}'
+        ws['B12'] = f'¥ {float(auctions)}'
         ws['A13'] = 'Purchases'
-        ws['B13'] = f'$ {float(purchases)}'
+        ws['B13'] = f'¥ {float(purchases)}'
         ws['A14'] = 'Expenses'
-        ws['B14'] = f'$ {float(total_expenses)}'
+        ws['B14'] = f'¥ {float(total_expenses)}'
         
         ws['A16'] = 'Transactions Detail'
         ws['A16'].font = Font(bold=True)
@@ -666,10 +666,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         for order in orders:
             ws.append([order.transaction_type.capitalize(), order.transaction_date.strftime('%Y-%m-%d'), 
-                      order.payment_status, f'$ {float(order.total_amount)}'])
+                      order.payment_status, f'¥ {float(order.total_amount)}'])
         
         for exp in expenses:
-            ws.append(['Expense', exp.date.strftime('%Y-%m-%d'), 'completed', f'$ {float(exp.amount)}'])
+            ws.append(['Expense', exp.date.strftime('%Y-%m-%d'), 'completed', f'¥ {float(exp.amount)}'])
         
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = f'attachment; filename="Report {start}_{end}.xlsx"'
