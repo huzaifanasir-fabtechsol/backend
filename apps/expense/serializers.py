@@ -15,7 +15,6 @@ class RestaurantSerializer(serializers.ModelSerializer):
 
 class ExpenseSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
-    transaction = serializers.SerializerMethodField()
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
     
     class Meta:
@@ -23,12 +22,15 @@ class ExpenseSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'amount', 'description', 'date', 'category', 'category_name', 'transaction', 'restaurant', 'restaurant_name', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
     
-    def get_transaction(self, obj):
-        if obj.transaction:
-            return {
-                'id': obj.transaction.id,
-                'description': obj.transaction.description,
-                'withdraw': obj.transaction.withdraw,
-                'date': obj.transaction.date
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.transaction:
+            data['transaction'] = {
+                'id': instance.transaction.id,
+                'description': instance.transaction.description,
+                'withdraw': instance.transaction.withdraw,
+                'date': instance.transaction.date
             }
-        return None
+        else:
+            data['transaction'] = None
+        return data
