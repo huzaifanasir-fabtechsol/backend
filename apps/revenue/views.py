@@ -20,6 +20,9 @@ from apps.revenue.serializers import CarSerializer, CarCategorySerializer, Order
 from apps.expense.models import Expense
 from django.conf import settings
 from apps.account.models import User
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase import pdfmetrics
+
 
 class CarCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CarCategorySerializer
@@ -260,7 +263,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def _add_watermark(self, canvas, doc, text="INVOICE"):
         canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 80)
+        canvas.setFont("HeiseiMin-W3", 80)
         canvas.setFillColor(colors.lightgrey)
         canvas.setFillAlpha(0.15)
 
@@ -275,7 +278,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     def generate_invoice(self, request, pk=None):
         order = self.get_object()
         is_auction = order.transaction_type == 'auction'
-
+        pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
         user = User.objects.filter(role='admin').first()
         if not user:
             return Response({'error': 'Admin user not found'}, status=404)
@@ -290,228 +293,242 @@ class OrderViewSet(viewsets.ModelViewSet):
         doc = SimpleDocTemplate(
             response,
             pagesize=pagesize,
-            topMargin=30,
-            bottomMargin=30,
-            leftMargin=30,
-            rightMargin=30
+            topMargin=20,
+            bottomMargin=20,
+            leftMargin=20,
+            rightMargin=20
         )
 
         elements = []
         styles = getSampleStyleSheet()
 
         # =====================================================
-        # HEADER SECTION
+        # HEADER WITH COMPANY INFO AND INVOICE DETAILS
         # =====================================================
-
-        header_data = [
-            [user.company_name, f"Invoice No: {order.order_number}"],
-            [user.company_address, f"Date: {order.transaction_date.strftime('%Y-%m-%d')}"],
-            [f"Phone/Fax: {user.company_phone}", ""],
-            [f"Email: {user.company_email}", ""],
-        ]
-
-        header_table = Table(header_data, colWidths=[doc.width * 0.6, doc.width * 0.4])
-
-        header_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ]))
-
-        elements.append(header_table)
-        elements.append(Spacer(1, 20))
+        header_elements = self._build_header_section(order, user, doc, styles)
+        elements.extend(header_elements)
+        elements.append(Spacer(1, 10))
+        
+        # =====================================================
+        # HORIZONTAL LINE
+        # =====================================================
+        from reportlab.platypus import HRFlowable
+        elements.append(HRFlowable(width="100%", thickness=1, lineCap='round', color=colors.black))
+        elements.append(Spacer(1, 15))
 
         # =====================================================
-        # CUSTOMER / BANK INFO
+        # BANK AND CUSTOMER INFO SECTION
         # =====================================================
-
-        elements.append(self._build_info_table(order, styles))
+        elements.append(self._build_bank_customer_section(order, doc, styles))
         elements.append(Spacer(1, 20))
 
         # =====================================================
         # ITEMS TABLE
         # =====================================================
-
         if is_auction:
             elements.append(self._build_auction_table(order, doc, styles))
         else:
             elements.append(self._build_standard_table(order, doc, styles))
 
-        elements.append(Spacer(1, 25))
-        elements.append(self._build_grand_total(order, styles))
-
         doc.build(
             elements,
-            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
-            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
+            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, "請求書"),
+            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, "請求書"),
         )
 
         return response
 
 
     # ======================================================
-    # INFO TABLE
+    # HEADER SECTION WITH COMPANY AND INVOICE INFO
     # ======================================================
-
-    def _build_info_table(self, order, styles):
+    def _build_header_section(self, order, user, doc, styles):
         od = order.other_details or {}
-        data = [
-            ['Transaction Type:', order.get_transaction_type_display(),
-            'Category:', order.get_transaction_catagory_display()],
-            ['Payment Status:', order.payment_status.capitalize(), '', ''],
+        
+        # Title
+        title_style = ParagraphStyle(
+            'Title',
+            parent=styles['Normal'],
+            fontSize=24,
+            alignment=TA_CENTER,
+            fontName='HeiseiMin-W3'
+        )
+        title = Paragraph("請求書", title_style)
+        
+        # Company info in top right, invoice details below
+        header_data = [
+            ["", "", user.company_name],
+            ["", "", user.company_address],
+            ["", "", f"TEL/FAX: {user.company_phone}"],
+            ["", "", f"{user.business_registration}"],
+            ["", "", f"NO. {order.order_number}"],
+            ["", "", f"Date : {order.transaction_date.strftime('%Y-%m-%d')}"],
         ]
-
-        # Customer/Saler details based on transaction type
-        if order.transaction_type == 'purchase':
-            if order.saler:
-                data.append(['Saler:', order.saler.name, 'Phone:', order.saler.phone])
-                data.append(['Address:', order.saler.address, '', ''])
-            else:
-                data.append(['Saler:', od.get('saler_name', ''), 'Phone:', od.get('phone', '')])
-                data.append(['Address:', od.get('address', ''), '', ''])
-        elif order.transaction_type in ['sale', 'auction']:
-            if order.customer:
-                data.append(['Customer:', order.customer.name, 'Phone:', order.customer.phone])
-                data.append(['Address:', order.customer.address, '', ''])
-            else:
-                data.append(['Customer:', od.get('customer_name', ''), 'Phone:', od.get('phone', '')])
-                data.append(['Address:', od.get('address', ''), '', ''])
-
-        # Payment method info
-        if order.transaction_type == 'purchase':
-            payment_method = od.get('payment_method', '')
-            account_number = od.get('account_number', '')
-            if payment_method:
-                data.append(['Payment Method:', payment_method, 'Account No:', account_number])
-        elif order.transaction_type in ['sale', 'auction']:
-            my_payment_method = od.get('my_payment_method', '')
-            my_account_number = od.get('my_account_number', '')
-            if my_payment_method:
-                data.append(['Payment Method:', my_payment_method, 'Account No:', my_account_number])
-
-        # Bank details - Company account (for sales/auctions)
-        if order.transaction_type in ['sale', 'auction'] and order.company_account:
-            data.append(['My Bank:', order.company_account.bank_name,
-                        'Account No:', order.company_account.account_number])
-            data.append(['SWIFT Code:', order.company_account.swift_code,
-                        'Branch Code:', order.company_account.branch_code])
-
-        # Bank details - Customer (for sales/auctions)
-        if order.transaction_type in ['sale', 'auction'] and order.customer:
-            data.append(['Customer Bank:', order.customer.bank_name,
-                        'Account No:', order.customer.account_number])
-            if order.customer.swift_code:
-                data.append(['SWIFT Code:', order.customer.swift_code,
-                            'Branch Code:', order.customer.branch_code])
-
-        # Bank details - Saler (for purchases)
-        if order.transaction_type == 'purchase' and order.saler:
-            data.append(['Saler Bank:', order.saler.bank_name,
-                        'Account No:', order.saler.account_number])
-            if order.saler.swift_code:
-                data.append(['SWIFT Code:', order.saler.swift_code,
-                            'Branch Code:', order.saler.branch_code])
-
-        # Bank details - Company account (for purchases)
-        if order.transaction_type == 'purchase' and order.company_account:
-            data.append(['My Bank:', order.company_account.bank_name,
-                        'Account No:', order.company_account.account_number])
-            data.append(['SWIFT Code:', order.company_account.swift_code,
-                        'Branch Code:', order.company_account.branch_code])
-
-        table = Table(data, colWidths=[100, 180, 100, 160])
-        table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.3, colors.grey),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        
+        # Add transaction ID if available
+        transaction_id = od.get('transaction_id', '')
+        if transaction_id:
+            header_data.append(["", "", f"取引ID: {transaction_id}"])
+        
+        header_table = Table(header_data, colWidths=[doc.width * 0.4, doc.width * 0.2, doc.width * 0.4])
+        header_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+            ('FONTNAME', (2, 0), (2, 3), 'HeiseiMin-W3'),
+            ('FONTSIZE', (2, 4), (2, -1), 9),
         ]))
-        return table
+        
+        return [title, Spacer(1, 15), header_table]
+
+    # ======================================================
+    # BANK AND CUSTOMER INFO SECTION
+    # ======================================================
+    def _build_bank_customer_section(self, order, doc, styles):
+        if order.transaction_type == 'purchase':
+            # Purchase: Company bank on left, Saler info on right
+            left_data = self._get_company_bank_info(order)
+            right_data = self._get_saler_info(order)
+        else:
+            # Sale/Auction: Company bank on left, Customer info on right
+            left_data = self._get_company_bank_info(order)
+            right_data = self._get_customer_info(order)
+        
+        # Create two-column layout
+        section_data = []
+        max_rows = max(len(left_data), len(right_data))
+        
+        for i in range(max_rows):
+            left_cell = left_data[i] if i < len(left_data) else ""
+            right_cell = right_data[i] if i < len(right_data) else ""
+            section_data.append([left_cell, "", right_cell])
+        
+        section_table = Table(section_data, colWidths=[doc.width * 0.45, doc.width * 0.1, doc.width * 0.45])
+        section_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (-1, -1), 'HeiseiMin-W3'),
+        ]))
+        
+        return section_table
+    
+    def _get_company_bank_info(self, order):
+        data = []
+        if order.company_account:
+            data.append(f"銀行: {order.company_account.bank_name}")
+            data.append(f"普通: {order.company_account.account_number}")
+            if order.company_account.branch_code:
+                data.append(f"支店: {order.company_account.branch_code}")
+            data.append(f"株式会社 {order.company_account.bank_name}")
+        return data
+    
+    def _get_customer_info(self, order):
+        od = order.other_details or {}
+        data = []
+        
+        if order.customer:
+            data.append(order.customer.address or "")
+            data.append(order.customer.name or "")
+            if hasattr(order.customer, 'bank_name') and order.customer.bank_name:
+                data.append(f"銀行: {order.customer.bank_name}")
+                data.append(f"口座: {order.customer.account_number}")
+        else:
+            data.append(od.get('address', ''))
+            data.append(od.get('customer_name', ''))
+        
+        # Add total amount
+        grand_total = sum(item.subtotal for item in order.items.all())
+        data.append(f"合計金額 ¥ {grand_total:,.0f}")
+        
+        return data
+    
+    def _get_saler_info(self, order):
+        od = order.other_details or {}
+        data = []
+        
+        if order.saler:
+            data.append(order.saler.address or "")
+            data.append(order.saler.name or "")
+            if hasattr(order.saler, 'bank_name') and order.saler.bank_name:
+                data.append(f"銀行: {order.saler.bank_name}")
+                data.append(f"口座: {order.saler.account_number}")
+        else:
+            data.append(od.get('address', ''))
+            data.append(od.get('saler_name', ''))
+        
+        return data
 
     # ======================================================
     # AUCTION TABLE
     # ======================================================
 
     def _build_auction_table(self, order, doc, styles):
-
+        od = order.other_details or {}
+        
         header = [
-            'No.', 'Venue', 'Year', 'Model', 'Chassis',
-            'Auction Fee', 'Vehicle Price', 'Tax',
-            'Recycling Fee', 'Auto Tax',
-            'Bid Fee', 'Bid Fee Tax', 'Total'
+            'NO.', '会場名', '年式', 'モデル', 'シャーシ',
+            'オークション料', '車両価格', '消費税',
+            'リサイクル料', '自動車税',
+            '入札料', '入札料税', '合計'
         ]
+        
+        # Add auction house column if specified
+        auction_house = od.get('auction_house', '')
+        if auction_house:
+            header.insert(1, 'オークションハウス')
 
         data = [header]
-
         totals = {
-            'auction_fee': 0,
-            'vehicle_price': 0,
-            'consumption_tax': 0,
-            'recycling_fee': 0,
-            'automobile_tax': 0,
-            'bid_fee': 0,
-            'bid_fee_tax': 0,
-            'subtotal': 0
+            'auction_fee': 0, 'vehicle_price': 0, 'consumption_tax': 0,
+            'recycling_fee': 0, 'automobile_tax': 0, 'bid_fee': 0,
+            'bid_fee_tax': 0, 'subtotal': 0
         }
 
         for idx, item in enumerate(order.items.all(), 1):
-
-            data.append([
-                str(idx),
-                item.venue or '',
-                item.year_type or '',
-                item.car.model or '',
-                item.car.chassis_number or '',
-                f'{item.auction_fee:,.0f}',
-                f'{item.vehicle_price:,.0f}',
-                f'{item.consumption_tax:,.0f}',
-                f'{item.recycling_fee:,.0f}',
-                f'{item.automobile_tax:,.0f}',
-                f'{item.bid_fee:,.0f}',
-                f'{item.bid_fee_tax:,.0f}',
-                f'{item.subtotal:,.0f}',
-            ])
-
+            row = [
+                str(idx), item.venue or '', item.year_type or '',
+                item.car.model or '', item.car.chassis_number or '',
+                f'{item.auction_fee:,.0f}', f'{item.vehicle_price:,.0f}',
+                f'{item.consumption_tax:,.0f}', f'{item.recycling_fee:,.0f}',
+                f'{item.automobile_tax:,.0f}', f'{item.bid_fee:,.0f}',
+                f'{item.bid_fee_tax:,.0f}', f'{item.subtotal:,.0f}'
+            ]
+            
+            if auction_house:
+                row.insert(1, auction_house)
+            
+            data.append(row)
             for key in totals:
                 totals[key] += getattr(item, key)
 
-        data.append([
-            '', '', '', '', 'TOTAL',
-            f'{totals["auction_fee"]:,.0f}',
-            f'{totals["vehicle_price"]:,.0f}',
-            f'{totals["consumption_tax"]:,.0f}',
-            f'{totals["recycling_fee"]:,.0f}',
-            f'{totals["automobile_tax"]:,.0f}',
-            f'{totals["bid_fee"]:,.0f}',
-            f'{totals["bid_fee_tax"]:,.0f}',
-            f'{totals["subtotal"]:,.0f}',
-        ])
-
-        col_widths = [
-            25, 60, 40, 80, 100,
-            65, 75, 60,
-            60, 55,
-            60, 60, 80
+        # Total row
+        total_row = [
+            '', '', '', '', '合計',
+            f'{totals["auction_fee"]:,.0f}', f'{totals["vehicle_price"]:,.0f}',
+            f'{totals["consumption_tax"]:,.0f}', f'{totals["recycling_fee"]:,.0f}',
+            f'{totals["automobile_tax"]:,.0f}', f'{totals["bid_fee"]:,.0f}',
+            f'{totals["bid_fee_tax"]:,.0f}', f'{totals["subtotal"]:,.0f}'
         ]
+        
+        if auction_house:
+            total_row.insert(1, '')
+            
+        data.append(total_row)
 
+        col_widths = [20, 50, 35, 70, 90, 55, 65, 50, 50, 45, 50, 50, 70] if auction_house else [25, 60, 40, 80, 100, 65, 75, 60, 60, 55, 60, 60, 80]
         table = Table(data, colWidths=col_widths, repeatRows=1)
 
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.darkgrey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.black),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-
+            ('FONTNAME', (0, 0), (-1, 0), 'HeiseiMin-W3'),
+            ('FONTSIZE', (0, 0), (-1, 0), 7),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('ALIGN', (0, 1), (4, -2), 'LEFT'),
+            ('ALIGN', (0, 1), (4, -2), 'CENTER'),
             ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
-
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-
+            ('FONTSIZE', (0, 1), (-1, -1), 7),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-
-            ('GRID', (0, 0), (-1, -1), 0.4, colors.black),
+            ('FONTNAME', (0, -1), (-1, -1), 'HeiseiMin-W3'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
         ]))
 
         return table
@@ -522,54 +539,42 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
 
     def _build_standard_table(self, order, doc, styles):
-        header = ['No.', 'Car Name', 'Model', 'Chassis', 'Year', 'Price', 'Tax', 'Total']
+        header = ['NO.', '車種', 'モデル', 'シャーシ', '年式', '価格', '消費税', '合計']
         data = [header]
-
         totals = {'vehicle_price': 0, 'consumption_tax': 0, 'subtotal': 0}
 
         for idx, item in enumerate(order.items.all(), 1):
-            car_name = str(item.car.category) if item.car.category else ''
-            model = item.car.model[:15] if len(item.car.model) > 15 else item.car.model
-            chassis = item.car.chassis_number[:12] if len(item.car.chassis_number) > 12 else item.car.chassis_number
-            
             data.append([
-                str(idx),
-                car_name,
-                model,
-                chassis,
-                str(item.car.year),
-                f'{item.vehicle_price:,.0f}',
-                f'{item.consumption_tax:,.0f}',
-                f'{item.subtotal:,.0f}',
+                str(idx), str(item.car.category) if item.car.category else '',
+                item.car.model, item.car.chassis_number, str(item.car.year),
+                f'{item.vehicle_price:,.0f}', f'{item.consumption_tax:,.0f}',
+                f'{item.subtotal:,.0f}'
             ])
-
+            
             totals['vehicle_price'] += item.vehicle_price
             totals['consumption_tax'] += item.consumption_tax
             totals['subtotal'] += item.subtotal
 
         data.append([
-            '', '', '', '', 'TOTAL',
+            '', '', '', '', '合計',
             f'{totals["vehicle_price"]:,.0f}',
             f'{totals["consumption_tax"]:,.0f}',
-            f'{totals["subtotal"]:,.0f}',
+            f'{totals["subtotal"]:,.0f}'
         ])
 
-        col_widths = [25, 95, 85, 95, 40, 75, 75, 80]
-        table = Table(data, colWidths=col_widths, repeatRows=1)
-
+        table = Table(data, colWidths=[30, 80, 100, 120, 50, 80, 80, 90], repeatRows=1)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.darkgrey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.black),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), 'HeiseiMin-W3'),
             ('FONTSIZE', (0, 0), (-1, 0), 8),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (4, -1), 'CENTER'),
             ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
             ('FONTSIZE', (0, 1), (-1, -1), 8),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.4, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, -1), (-1, -1), 'HeiseiMin-W3'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
         ]))
 
         return table
@@ -579,13 +584,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         grand_total = sum(item.subtotal for item in order.items.all())
 
         style = ParagraphStyle(
-            'GrandTotal',
+            '総計',
             parent=styles['Normal'],
             fontSize=14,
-            alignment=TA_RIGHT
+            alignment=TA_RIGHT,
+            fontName='HeiseiMin-W3'
         )
 
-        return Paragraph(f"<b>Grand Total: ¥ {grand_total:,.0f}</b>", style)
+        return Paragraph(f" 総計 : ¥ {grand_total:,.0f}", style)
 
 
     @action(detail=False, methods=['get'])
@@ -919,160 +925,163 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 transaction.balance = running_balance
                 transaction.save(update_fields=['balance'])
 
-    @action(detail=False, methods=['post'])
-    def bulk_import(self, request):
-        from datetime import datetime
-        import csv
-        from io import StringIO
-        import requests
+    # ############ japan post
+    # @action(detail=False, methods=['post'])
+    # def bulk_import(self, request):
+    #     from datetime import datetime
+    #     import csv
+    #     from io import StringIO
+    #     import requests
         
-        csv_data = request.data.get('csv_data', '')
-        sheet_url = request.data.get('sheet_url', '')
+    #     csv_data = request.data.get('csv_data', '')
+    #     sheet_url = request.data.get('sheet_url', '')
         
-        if not csv_data and not sheet_url:
-            return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+    #     if not csv_data and not sheet_url:
+    #         return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
         
-        try:
-            # If Google Sheets URL is provided, fetch CSV data
-            if sheet_url:
-                # Handle published CSV URLs directly
-                if 'pub?output=csv' in sheet_url:
-                    csv_url = sheet_url
-                else:
-                    # Extract sheet ID from various Google Sheets URL formats
-                    sheet_id = None
-                    gid = '0'  # default sheet
+    #     try:
+    #         # If Google Sheets URL is provided, fetch CSV data
+    #         if sheet_url:
+    #             # Handle published CSV URLs directly
+    #             if 'pub?output=csv' in sheet_url:
+    #                 csv_url = sheet_url
+    #             else:
+    #                 # Extract sheet ID from various Google Sheets URL formats
+    #                 sheet_id = None
+    #                 gid = '0'  # default sheet
                     
-                    if '/d/' in sheet_url:
-                        # Extract sheet ID from URL like: https://docs.google.com/spreadsheets/d/ID/edit
-                        sheet_id = sheet_url.split('/d/')[1].split('/')[0]
-                        if 'gid=' in sheet_url:
-                            gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+    #                 if '/d/' in sheet_url:
+    #                     # Extract sheet ID from URL like: https://docs.google.com/spreadsheets/d/ID/edit
+    #                     sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+    #                     if 'gid=' in sheet_url:
+    #                         gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
                     
-                    if not sheet_id:
-                        return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+    #                 if not sheet_id:
+    #                     return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
                     
-                    # Construct proper CSV export URL
-                    csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+    #                 # Construct proper CSV export URL
+    #                 csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
                 
-                try:
-                    response = requests.get(csv_url, timeout=30)
-                    response.raise_for_status()
-                    response.encoding = 'utf-8'  # Ensure proper UTF-8 encoding
-                    csv_data = response.text
-                except requests.exceptions.HTTPError as e:
-                    if e.response.status_code == 400:
-                        return Response({
-                            'error': 'Sheet access denied. Please make your Google Sheet public: Share > Anyone with the link > Viewer'
-                        }, status=400)
-                    raise
+    #             try:
+    #                 response = requests.get(csv_url, timeout=30)
+    #                 response.raise_for_status()
+    #                 response.encoding = 'utf-8'  # Ensure proper UTF-8 encoding
+    #                 csv_data = response.text
+    #             except requests.exceptions.HTTPError as e:
+    #                 if e.response.status_code == 400:
+    #                     return Response({
+    #                         'error': 'Sheet access denied. Please make your Google Sheet public: Share > Anyone with the link > Viewer'
+    #                     }, status=400)
+    #                 raise
             
-            csv_file = StringIO(csv_data)
-            reader = csv.reader(csv_file)
+    #         csv_file = StringIO(csv_data)
+    #         reader = csv.reader(csv_file)
             
-            # Skip header row
-            next(reader, None)
+    #         # Skip header row
+    #         next(reader, None)
             
-            transactions = []
-            for row in reader:
-                if len(row) < 6:  # Skip incomplete rows
-                    continue
+    #         transactions = []
+    #         for row in reader:
+    #             if len(row) < 6:  # Skip incomplete rows
+    #                 continue
                     
-                # Parse date (年月日)
-                date_str = row[0].strip()
-                try:
-                    # Try multiple date formats
-                    for fmt in [
-                            '%Y/%m/%d',
-                            '%Y-%m-%d',
-                            '%d/%m/%Y',
-                            '%m/%d/%Y',
-                            '%b. %d, %Y',
-                            '%Y%m%d', 
-                            '%m/%d/%y %H:%M',
-                            '%m/%d/%Y %H:%M',
-                        ]:
+    #             # Parse date (年月日)
+    #             date_str = row[0].strip()
+    #             try:
+    #                 # Try multiple date formats
+    #                 for fmt in [
+    #                         '%Y/%m/%d',
+    #                         '%Y-%m-%d',
+    #                         '%d/%m/%Y',
+    #                         '%m/%d/%Y',
+    #                         '%b. %d, %Y',
+    #                         '%Y%m%d', 
+    #                         '%m/%d/%y %H:%M',
+    #                         '%m/%d/%Y %H:%M',
+    #                     ]:
 
-                        try:
-                            date_obj = datetime.strptime(date_str, fmt).date()
-                            break
-                        except ValueError:
-                            continue
-                    else:
-                        continue  # Skip if no format matches
-                except:
-                    pass
+    #                     try:
+    #                         date_obj = datetime.strptime(date_str, fmt).date()
+    #                         break
+    #                     except ValueError:
+    #                         continue
+    #                 else:
+    #                     continue  # Skip if no format matches
+    #             except:
+    #                 pass
                 
-                # Parse withdraw (お引出し)
-                withdraw = 0
-                if row[3].strip():
-                    try:
-                        if not row[3].strip() == '-':
-                            withdraw = float(row[3].strip())
-                    except ValueError:
-                        withdraw = 0
+    #             # Parse withdraw (お引出し)
+    #             withdraw = 0
+    #             if row[3].strip():
+    #                 try:
+    #                     if not row[3].strip() == '-':
+    #                         withdraw = float(row[3].strip())
+    #                 except ValueError:
+    #                     withdraw = 0
                 
-                # Parse deposit (お預入れ)
-                deposit = 0
-                if row[2].strip():
-                    try:
-                        if not row[2].strip() == '-':
-                            deposit = float(row[2].strip())
-                    except ValueError:
-                        deposit = 0
+    #             # Parse deposit (お預入れ)
+    #             deposit = 0
+    #             if row[2].strip():
+    #                 try:
+    #                     if not row[2].strip() == '-':
+    #                         deposit = float(row[2].strip())
+    #                 except ValueError:
+    #                     deposit = 0
                 
-                # Parse description (お取り扱い内容)
-                description = row[5].strip()[:500]  # Limit to 500 chars
+    #             # Parse description (お取り扱い内容)
+    #             description = row[5].strip()[:500]  # Limit to 500 chars
                 
-                # Parse balance (残高)
-                balance = 0
-                if row[6].strip():
-                    try:
-                        balance = float(row[6].strip())
-                    except ValueError:
-                        balance = 0
+    #             # Parse balance (残高)
+    #             balance = 0
+    #             if row[6].strip():
+    #                 try:
+    #                     balance = float(row[6].strip())
+    #                 except ValueError:
+    #                     balance = 0
                 
-                # Skip メモ column (row[5]) as requested
-                # Notes from ラベル column (row[6] if exists)
-                notes = ''
-                if len(row) > 3 and row[4].strip():
-                    notes = row[4].strip()
+    #             # Skip メモ column (row[5]) as requested
+    #             # Notes from ラベル column (row[6] if exists)
+    #             notes = ''
+    #             if len(row) > 3 and row[4].strip():
+    #                 notes = row[4].strip()
 
-                transactionId = ''
-                if len(row) > 6 and row[1].strip():
-                    transactionId = row[1].strip()
-                company_account = None
-                if len(row) > 5 and row[7].strip():
-                    try:
-                        account_id = int(row[7].strip())
-                        company_account = CompanyAccount.objects.filter(id=account_id).first()
-                    except ValueError:
-                        company_account = None
-                transactions.append(Transaction(
-                    user=request.user,
-                    date=date_obj,
-                    withdraw=withdraw,
-                    deposit=deposit,
-                    balance=balance,
-                    description=description,
-                    notes=notes,
-                    company_account=company_account,
-                    transaction_id=transactionId
-                ))
+    #             transactionId = ''
+    #             if len(row) > 6 and row[1].strip():
+    #                 transactionId = row[1].strip()
+    #             company_account = None
+    #             if len(row) > 5 and row[7].strip():
+    #                 try:
+    #                     account_id = int(row[7].strip())
+    #                     company_account = CompanyAccount.objects.filter(id=account_id).first()
+    #                 except ValueError:
+    #                     company_account = None
+    #             transactions.append(Transaction(
+    #                 user=request.user,
+    #                 date=date_obj,
+    #                 withdraw=withdraw,
+    #                 deposit=deposit,
+    #                 balance=balance,
+    #                 description=description,
+    #                 notes=notes,
+    #                 company_account=company_account,
+    #                 transaction_id=transactionId
+    #             ))
             
-            # Bulk create transactions
-            Transaction.objects.bulk_create(transactions, ignore_conflicts=True)
+    #         # Bulk create transactions
+    #         Transaction.objects.bulk_create(transactions, ignore_conflicts=True)
             
-            return Response({
-                'message': f'Successfully imported {len(transactions)} transactions',
-                'count': len(transactions)
-            })
+    #         return Response({
+    #             'message': f'Successfully imported {len(transactions)} transactions',
+    #             'count': len(transactions)
+    #         })
             
-        except requests.RequestException as e:
-            return Response({'error': f'Failed to fetch data from URL: {str(e)}'}, status=400)
-        except Exception as e:
-            return Response({'error': str(e)}, status=400)
-        
+    #     except requests.RequestException as e:
+    #         return Response({'error': f'Failed to fetch data from URL: {str(e)}'}, status=400)
+    #     except Exception as e:
+    #         return Response({'error': str(e)}, status=400)
+    
+
+    ########### paypay
     # @action(detail=False, methods=['post'])
     # def bulk_import(self, request):
     #     from datetime import datetime
@@ -1226,3 +1235,478 @@ class TransactionViewSet(viewsets.ModelViewSet):
     #         return Response({'error': f'Failed to fetch data from URL: {str(e)}'}, status=400)
     #     except Exception as e:
     #         return Response({'error': str(e)}, status=400)
+
+
+    ####################### smbc
+    # @action(detail=False, methods=['post'])
+    # def bulk_import(self, request):
+    #     from datetime import datetime
+    #     import csv
+    #     from io import StringIO
+    #     import requests
+    #     import re
+
+    #     csv_data = request.data.get('csv_data', '')
+    #     sheet_url = request.data.get('sheet_url', '')
+
+    #     if not csv_data and not sheet_url:
+    #         return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+
+    #     try:
+    #         # ==============================
+    #         # Fetch CSV from Google Sheets
+    #         # ==============================
+    #         if sheet_url:
+    #             if 'pub?output=csv' in sheet_url:
+    #                 csv_url = sheet_url
+    #             else:
+    #                 sheet_id = None
+    #                 gid = '0'
+
+    #                 if '/d/' in sheet_url:
+    #                     sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+    #                     if 'gid=' in sheet_url:
+    #                         gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+
+    #                 if not sheet_id:
+    #                     return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+
+    #                 csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+
+    #             response = requests.get(csv_url, timeout=30)
+    #             response.raise_for_status()
+    #             response.encoding = 'utf-8'
+    #             csv_data = response.text
+
+    #         csv_file = StringIO(csv_data)
+    #         reader = csv.reader(csv_file)
+
+    #         # skip header
+    #         next(reader, None)
+
+    #         transactions = []
+
+    #         for row in reader:
+    #             # Expecting at least 6 columns
+    #             if len(row) < 6:
+    #                 continue
+
+    #             # ==============================
+    #             # DATE
+    #             # ==============================
+    #             date_str = row[0].strip()
+    #             date_obj = None
+
+    #             for fmt in (
+    #                 '%Y/%m/%d', '%Y-%m-%d', '%d/%m/%Y',
+    #                 '%m/%d/%Y', '%Y%m%d'
+    #             ):
+    #                 try:
+    #                     date_obj = datetime.strptime(date_str, fmt).date()
+    #                     break
+    #                 except ValueError:
+    #                     continue
+
+    #             if not date_obj:
+    #                 continue
+
+    #             # ==============================
+    #             # WITHDRAW
+    #             # ==============================
+    #             withdraw = 0
+    #             if row[1].strip() and row[1].strip() != '-':
+    #                 try:
+    #                     withdraw = float(row[1].strip())
+    #                 except:
+    #                     pass
+
+    #             # ==============================
+    #             # DEPOSIT
+    #             # ==============================
+    #             deposit = 0
+    #             if row[2].strip() and row[2].strip() != '-':
+    #                 try:
+    #                     deposit = float(row[2].strip())
+    #                 except:
+    #                     pass
+
+    #             # ==============================
+    #             # DESCRIPTION (お取り扱い内容)
+    #             # ==============================
+    #             transaction_id = row[3].strip()
+
+    #             # normalize full-width spaces
+    #             transaction_id = transaction_id.replace('\u3000', ' ')
+
+    #             # extract codes like V495093
+    #             match = re.match(r'^([A-Z]\d+)', transaction_id)
+
+    #             if match:
+    #                 transaction_id = match.group(1)
+    #             else:
+    #                 transaction_id = transaction_id
+
+    #             transaction_id = transaction_id[:500]
+
+    #             # ==============================
+    #             # BALANCE
+    #             # ==============================
+    #             balance = 0
+    #             if row[4].strip():
+    #                 try:
+    #                     balance = float(row[4].strip())
+    #                 except:
+    #                     pass
+    #             company_account = None
+    #             if len(row) > 5 and row[6].strip():
+    #                 try:
+    #                     account_id = int(row[6].strip())
+    #                     company_account = CompanyAccount.objects.filter(id=account_id).first()
+    #                 except ValueError:
+    #                     company_account = None
+
+    #             # ==============================
+    #             # NOTES (メモ)
+    #             # ==============================
+    #             notes = ''
+    #             # notes = row[5].strip() if len(row) > 5 else ''
+
+    #             transactions.append(Transaction(
+    #                 user=request.user,
+    #                 date=date_obj,
+    #                 withdraw=withdraw,
+    #                 deposit=deposit,
+    #                 balance=balance,
+    #                 description='',
+    #                 transaction_id=transaction_id,
+    #                 notes=notes,
+    #                 company_account=company_account,
+    #             ))
+
+    #         Transaction.objects.bulk_create(transactions)
+
+    #         return Response({
+    #             'message': f'Successfully imported {len(transactions)} transactions',
+    #             'count': len(transactions)
+    #         })
+
+    #     except requests.RequestException as e:
+    #         return Response({'error': f'Failed to fetch data: {str(e)}'}, status=400)
+    #     except Exception as e:
+    #         return Response({'error': str(e)}, status=400)
+
+    ####################### mesai
+    # @action(detail=False, methods=['post'])
+    # def bulk_import(self, request):
+    #     from datetime import datetime
+    #     import csv
+    #     from io import StringIO
+    #     import requests
+    #     import re
+
+    #     csv_data = request.data.get('csv_data', '')
+    #     sheet_url = request.data.get('sheet_url', '')
+
+    #     if not csv_data and not sheet_url:
+    #         return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+
+    #     try:
+    #         # ==============================
+    #         # Fetch CSV from Google Sheets
+    #         # ==============================
+    #         if sheet_url:
+    #             if 'pub?output=csv' in sheet_url:
+    #                 csv_url = sheet_url
+    #             else:
+    #                 sheet_id = None
+    #                 gid = '0'
+
+    #                 if '/d/' in sheet_url:
+    #                     sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+    #                     if 'gid=' in sheet_url:
+    #                         gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+
+    #                 if not sheet_id:
+    #                     return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+
+    #                 csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+
+    #             response = requests.get(csv_url, timeout=30)
+    #             response.raise_for_status()
+    #             response.encoding = 'utf-8'
+    #             csv_data = response.text
+
+    #         csv_file = StringIO(csv_data)
+    #         reader = csv.reader(csv_file)
+
+    #         # skip header
+    #         next(reader, None)
+
+    #         transactions = []
+
+    #         for row in reader:
+    #             # Expecting at least 6 columns
+    #             if len(row) < 6:
+    #                 continue
+
+    #             # ==============================
+    #             # DATE
+    #             # ==============================
+    #             date_str = row[0].strip()
+    #             date_obj = None
+
+    #             for fmt in (
+    #                 '%Y/%m/%d', '%Y-%m-%d', '%d/%m/%Y',
+    #                 '%m/%d/%Y', '%Y%m%d'
+    #             ):
+    #                 try:
+    #                     date_obj = datetime.strptime(date_str, fmt).date()
+    #                     break
+    #                 except ValueError:
+    #                     continue
+
+    #             if not date_obj:
+    #                 continue
+
+    #             # ==============================
+    #             # WITHDRAW
+    #             # ==============================
+    #             withdraw = 0
+    #             if row[1].strip() and row[1].strip() != '-':
+    #                 try:
+    #                     withdraw = float(row[1].strip())
+    #                 except:
+    #                     pass
+
+    #             # ==============================
+    #             # DEPOSIT
+    #             # ==============================
+    #             deposit = 0
+    #             if row[2].strip() and row[2].strip() != '-':
+    #                 try:
+    #                     deposit = float(row[2].strip())
+    #                 except:
+    #                     pass
+
+    #             # ==============================
+    #             # DESCRIPTION (お取り扱い内容)
+    #             # ==============================
+    #             transaction_id = row[3].strip()
+
+    #             # normalize full-width spaces
+    #             transaction_id = transaction_id.replace('\u3000', ' ')
+
+    #             # extract codes like V495093
+    #             match = re.match(r'^([A-Z]\d+)', transaction_id)
+
+    #             if match:
+    #                 transaction_id = match.group(1)
+    #             else:
+    #                 transaction_id = transaction_id
+
+    #             transaction_id = transaction_id[:500]
+
+    #             # ==============================
+    #             # BALANCE
+    #             # ==============================
+    #             balance = 0
+    #             if row[4].strip():
+    #                 try:
+    #                     balance = float(row[4].strip())
+    #                 except:
+    #                     pass
+    #             company_account = None
+    #             if len(row) > 5 and row[5].strip():
+    #                 try:
+    #                     account_id = int(row[5].strip())
+    #                     company_account = CompanyAccount.objects.filter(id=account_id).first()
+    #                 except ValueError:
+    #                     company_account = None
+
+    #             # ==============================
+    #             # NOTES (メモ)
+    #             # ==============================
+    #             notes = ''
+    #             # notes = row[5].strip() if len(row) > 5 else ''
+
+    #             transactions.append(Transaction(
+    #                 user=request.user,
+    #                 date=date_obj,
+    #                 withdraw=withdraw,
+    #                 deposit=deposit,
+    #                 balance=balance,
+    #                 description='',
+    #                 transaction_id=transaction_id,
+    #                 notes=notes,
+    #                 company_account=company_account,
+    #             ))
+
+    #         Transaction.objects.bulk_create(transactions)
+
+    #         return Response({
+    #             'message': f'Successfully imported {len(transactions)} transactions',
+    #             'count': len(transactions)
+    #         })
+
+    #     except requests.RequestException as e:
+    #         return Response({'error': f'Failed to fetch data: {str(e)}'}, status=400)
+    #     except Exception as e:
+    #         return Response({'error': str(e)}, status=400)
+        
+    ####################### gmo
+    @action(detail=False, methods=['post'])
+    def bulk_import(self, request):
+        from datetime import datetime
+        import csv
+        from io import StringIO
+        import requests
+        import re
+
+        csv_data = request.data.get('csv_data', '')
+        sheet_url = request.data.get('sheet_url', '')
+
+        if not csv_data and not sheet_url:
+            return Response({'error': 'Either csv_data or sheet_url is required'}, status=400)
+
+        try:
+            # ==============================
+            # Fetch CSV from Google Sheets
+            # ==============================
+            if sheet_url:
+                if 'pub?output=csv' in sheet_url:
+                    csv_url = sheet_url
+                else:
+                    sheet_id = None
+                    gid = '0'
+
+                    if '/d/' in sheet_url:
+                        sheet_id = sheet_url.split('/d/')[1].split('/')[0]
+                        if 'gid=' in sheet_url:
+                            gid = sheet_url.split('gid=')[1].split('&')[0].split('#')[0]
+
+                    if not sheet_id:
+                        return Response({'error': 'Invalid Google Sheets URL format'}, status=400)
+
+                    csv_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
+
+                response = requests.get(csv_url, timeout=30)
+                response.raise_for_status()
+                response.encoding = 'utf-8'
+                csv_data = response.text
+
+            csv_file = StringIO(csv_data)
+            reader = csv.reader(csv_file)
+
+            # skip header
+            next(reader, None)
+
+            transactions = []
+
+            for row in reader:
+                # Expecting at least 6 columns
+                if len(row) < 6:
+                    continue
+
+                # ==============================
+                # DATE
+                # ==============================
+                date_str = row[0].strip()
+                date_obj = None
+
+                for fmt in (
+                    '%Y/%m/%d', '%Y-%m-%d', '%d/%m/%Y',
+                    '%m/%d/%Y', '%Y%m%d'
+                ):
+                    try:
+                        date_obj = datetime.strptime(date_str, fmt).date()
+                        break
+                    except ValueError:
+                        continue
+
+                if not date_obj:
+                    continue
+
+                # ==============================
+                # WITHDRAW
+                # ==============================
+                withdraw = 0
+                if row[3].strip() and row[3].strip() != '-':
+                    try:
+                        withdraw = float(row[3].strip())
+                    except:
+                        pass
+
+                # ==============================
+                # DEPOSIT
+                # ==============================
+                deposit = 0
+                if row[2].strip() and row[2].strip() != '-':
+                    try:
+                        deposit = float(row[2].strip())
+                    except:
+                        pass
+
+                # ==============================
+                # DESCRIPTION (お取り扱い内容)
+                # ==============================
+                # transaction_id = row[3].strip()
+
+                # # normalize full-width spaces
+                # transaction_id = transaction_id.replace('\u3000', ' ')
+
+                # # extract codes like V495093
+                # match = re.match(r'^([A-Z]\d+)', transaction_id)
+
+                # if match:
+                #     transaction_id = match.group(1)
+                # else:
+                #     transaction_id = transaction_id
+
+                # transaction_id = transaction_id[:500]
+
+                # ==============================
+                # BALANCE
+                # ==============================
+                balance = 0
+                if row[4].strip():
+                    try:
+                        balance = float(row[4].strip())
+                    except:
+                        pass
+                company_account = None
+                if len(row) > 5 and row[5].strip():
+                    try:
+                        account_id = int(row[5].strip())
+                        company_account = CompanyAccount.objects.filter(id=account_id).first()
+                    except ValueError:
+                        company_account = None
+
+                # ==============================
+                # NOTES (メモ)
+                # ==============================
+                notes = ''
+                # notes = row[5].strip() if len(row) > 5 else ''
+
+                transactions.append(Transaction(
+                    user=request.user,
+                    date=date_obj,
+                    withdraw=withdraw,
+                    deposit=deposit,
+                    balance=balance,
+                    description='',
+                    transaction_id='',
+                    notes=notes,
+                    company_account=company_account,
+                ))
+
+            Transaction.objects.bulk_create(transactions)
+
+            return Response({
+                'message': f'Successfully imported {len(transactions)} transactions',
+                'count': len(transactions)
+            })
+
+        except requests.RequestException as e:
+            return Response({'error': f'Failed to fetch data: {str(e)}'}, status=400)
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)

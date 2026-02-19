@@ -19,6 +19,7 @@ class User(AbstractUser):
     company_phone = models.CharField(max_length=250, blank=True, null=True)
     company_website = models.CharField(max_length=250, blank=True, null=True)
     company_address = models.CharField(max_length=250, blank=True, null=True)
+    business_registration = models.CharField(max_length=250, blank=True, null=True)
     role = models.CharField(max_length=50, choices=USER_ROLES, default='admin')
 
     
