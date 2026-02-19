@@ -8,7 +8,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Get first user or create a default one
-        user = User.objects.first()
+        user = User.objects.filter(email='user@example.com').first()
         if not user:
             self.stdout.write(self.style.ERROR('No users found. Please create a user first.'))
             return
