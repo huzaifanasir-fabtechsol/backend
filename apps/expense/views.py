@@ -128,7 +128,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         if expense.transaction:
             detail_data.extend([
-                ["トランザクションID:", str(expense.transaction.id)],
+                ["トランザクションID:", str(expense.transaction.transaction_id)],
                 ["取引:", expense.transaction.description],
                 ["取引金額:", f"¥ {expense.transaction.withdraw:,.0f}"]
             ])
@@ -228,7 +228,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 str(expense.date),
                 expense.title,
                 expense.category.name if expense.category else '-',
-                f"{expense.transaction.id}" if expense.transaction else '-',
+                f"{expense.transaction.transaction_id}" if expense.transaction else '-',
                 expense.restaurant.name if expense.restaurant else '-',
                 f"¥ {expense.amount:,.0f}"
             ])
