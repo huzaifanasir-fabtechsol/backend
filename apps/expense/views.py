@@ -57,10 +57,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         self._add_watermark(canvas, doc, "Ilyas Sons 合同会社")
 
         logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
-        print(logo_path)
-        print('#########################################')
         if os.path.exists(logo_path):
-            print('#########################################')
             logo = ImageReader(logo_path)
 
             logo_width = 120

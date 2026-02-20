@@ -636,9 +636,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
         print(logo_path)
-        print('#########################################')
         if os.path.exists(logo_path):
-            print('#########################################')
             logo = ImageReader(logo_path)
 
             logo_width = 120
