@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+﻿from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -38,7 +38,25 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Expense.objects.filter(user=self.request.user).order_by('-date')
+        queryset = Expense.objects.filter(user=self.request.user)
+
+        category = self.request.query_params.get('category')
+        date = self.request.query_params.get('date')
+        search = self.request.query_params.get('search')
+
+        if category:
+            queryset = queryset.filter(category_id=category)
+        if date:
+            queryset = queryset.filter(date=date)
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search) |
+                Q(category__name__icontains=search) |
+                Q(restaurant__name__icontains=search)
+            )
+
+        return queryset.order_by('-date', '-id')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -226,23 +244,45 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         elements.append(Spacer(1, 15))
 
         # Table
+        cell_style = ParagraphStyle(
+            'TableCell',
+            parent=styles['Normal'],
+            fontName='HeiseiMin-W3',
+            fontSize=8,
+            leading=10,
+            wordWrap='CJK',
+        )
+        right_cell_style = ParagraphStyle(
+            'TableCellRight',
+            parent=cell_style,
+            alignment=TA_RIGHT,
+        )
+
         table_data = [['Sr', '日付', 'タイトル', 'カテゴリ', '取引', 'レストラン', '額']]
         total = 0
         for idx, expense in enumerate(queryset, 1):
             table_data.append([
                 str(idx),
                 str(expense.date),
-                expense.title,
-                expense.category.name if expense.category else '-',
-                f"{expense.transaction.transaction_id}" if expense.transaction else '-',
-                expense.restaurant.name if expense.restaurant else '-',
-                f"¥ {expense.amount:,.0f}"
+                Paragraph(expense.title, cell_style),
+                Paragraph(expense.category.name if expense.category else '-', cell_style),
+                Paragraph(f"{expense.transaction.transaction_id}" if expense.transaction else '-', cell_style),
+                Paragraph(expense.restaurant.name if expense.restaurant else '-', cell_style),
+                Paragraph(f"¥ {expense.amount:,.0f}", right_cell_style)
             ])
             total += expense.amount
 
-        table_data.append(['', '', '', '', '', '合計:', f"¥ {total:,.0f}"])
+        table_data.append([
+            '',
+            '',
+            '',
+            '',
+            '',
+            Paragraph('合計:', cell_style),
+            Paragraph(f"¥ {total:,.0f}", right_cell_style)
+        ])
 
-        table = Table(table_data, colWidths=[30, 60, 100, 80, 70, 80, 70])
+        table = Table(table_data, colWidths=[30, 60, 100, 85, 70, 130, 80])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.black),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -253,6 +293,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ('FONTNAME', (0, 1), (-1, -1), 'HeiseiMin-W3'),
             ('ALIGN', (0, 1), (0, -1), 'CENTER'),
             ('ALIGN', (-1, 1), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 1), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black)
         ]))
