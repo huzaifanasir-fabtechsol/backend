@@ -74,33 +74,40 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
             canvas.restoreState()
 
-    def _add_page_decorations(self, canvas, doc):
+    def _add_page_decorations(self, canvas, doc, include_logo=True):
         from django.conf import settings
         import os
         from reportlab.lib.utils import ImageReader
         self._add_watermark(canvas, doc, "Ilyas Sons 合同会社")
 
-        logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
-        print("MEDIA_ROOT:", settings.MEDIA_ROOT)
-        print("Logo path:", logo_path)
-        print("Exists:", os.path.exists(logo_path))
-        if os.path.exists(logo_path):
-            logo = ImageReader(logo_path)
+        if include_logo:
+            logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
+            print("MEDIA_ROOT:", settings.MEDIA_ROOT)
+            print("Logo path:", logo_path)
+            print("Exists:", os.path.exists(logo_path))
+            if os.path.exists(logo_path):
+                logo = ImageReader(logo_path)
 
-            logo_width = 120
-            logo_height = 40
+                logo_width = 120
+                logo_height = 40
 
-            x = doc.leftMargin
-            y = doc.pagesize[1] - logo_height - 10
+                x = doc.leftMargin
+                y = doc.pagesize[1] - logo_height - 10
 
-            canvas.drawImage(
-                logo,
-                x,
-                y,
-                width=logo_width,
-                height=logo_height,
-                mask='auto'
-            )
+                canvas.drawImage(
+                    logo,
+                    x,
+                    y,
+                    width=logo_width,
+                    height=logo_height,
+                    mask='auto'
+                )
+
+    def _add_first_page_decorations(self, canvas, doc):
+        self._add_page_decorations(canvas, doc, include_logo=True)
+
+    def _add_later_page_decorations(self, canvas, doc):
+        self._add_page_decorations(canvas, doc, include_logo=False)
 
 
     @action(detail=True, methods=['get'])
@@ -170,8 +177,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         elements.append(detail_table)
         doc.build(
             elements,
-            onFirstPage=self._add_page_decorations,
-            onLaterPages=self._add_page_decorations,
+            onFirstPage=self._add_first_page_decorations,
+            onLaterPages=self._add_later_page_decorations,
         )
         return response
 
@@ -303,8 +310,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         doc.build(
             elements,
-            onFirstPage=self._add_page_decorations,
-            onLaterPages=self._add_page_decorations,
+            onFirstPage=self._add_first_page_decorations,
+            onLaterPages=self._add_later_page_decorations,
         )
         return response
 
