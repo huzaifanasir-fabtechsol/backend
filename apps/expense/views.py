@@ -328,7 +328,10 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(
                 Q(description__icontains=search) |
-                Q(notes__icontains=search)
+                Q(notes__icontains=search) |
+                Q(balance__icontains=search) |
+                Q(deposit__icontains=search) |
+                Q(withdraw__icontains=search)
             )
         if date:
             queryset = queryset.filter(date=date)
