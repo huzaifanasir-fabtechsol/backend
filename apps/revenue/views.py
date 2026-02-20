@@ -43,6 +43,12 @@ class CarCategoryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def all(self, request):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 class CarViewSet(viewsets.ModelViewSet):
     serializer_class = CarSerializer
@@ -53,6 +59,12 @@ class CarViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+    
+    def list(self, request, *args, **kwargs):
+        # Return all cars without pagination
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
@@ -89,6 +101,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+    
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
@@ -111,6 +130,279 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def create_with_items(self, request):
+        serializer = CreateOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        items_data = data.pop('items')
+        customer_id = data.pop('customer_id', None)
+        saler_id = data.pop('saler_id', None)
+        company_account_id = data.pop('company_account_id', None)
+        auction_id = data.pop('auction_id', None)
+        transaction_id = data.pop('transaction', None)
+
+        # Validate foreign keys
+        customer = None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id, user=request.user)
+            except Customer.DoesNotExist:
+                return Response({'error': 'Customer not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        saler = None
+        if saler_id:
+            try:
+                saler = Saler.objects.get(id=saler_id, user=request.user)
+            except Saler.DoesNotExist:
+                return Response({'error': 'Saler not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_account = None
+        if company_account_id:
+            try:
+                company_account = CompanyAccount.objects.get(id=company_account_id, user=request.user)
+            except CompanyAccount.DoesNotExist:
+                return Response({'error': 'Company account not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        auction = None
+        if auction_id:
+            try:
+                auction = Auction.objects.get(id=auction_id, user=request.user)
+            except Auction.DoesNotExist:
+                return Response({'error': 'Auction not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        transaction_obj = None
+        if transaction_id:
+            try:
+                transaction_obj = Transaction.objects.get(id=transaction_id, user=request.user)
+            except Transaction.DoesNotExist:
+                return Response({'error': 'Transaction not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if data['transaction_type'] == 'sale' and not customer:
+            return Response({'error': 'Customer is required for sale orders'}, status=status.HTTP_400_BAD_REQUEST)
+        if data['transaction_type'] == 'purchase' and not saler:
+            return Response({'error': 'Saler is required for purchase orders'}, status=status.HTTP_400_BAD_REQUEST)
+        if data['transaction_type'] == 'auction' and not customer:
+            return Response({'error': 'Customer is required for auction orders'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Move all extra fields into other_details
+        other_details = {
+            'customer_name': data.pop('customer_name', ''),
+            'saler_name': data.pop('saler_name', ''),
+            'seller_name': data.pop('seller_name', ''),
+            'phone': data.pop('phone', ''),
+            'address': data.pop('address', ''),
+            'payment_method': data.pop('payment_method', ''),
+            'account_number': data.pop('account_number', ''),
+            'my_payment_method': data.pop('my_payment_method', ''),
+            'my_account_number': data.pop('my_account_number', ''),
+            'auction_house': data.pop('auction_house', '')
+        }
+
+        # Check categories exist
+        category_ids = [item['category'] for item in items_data]
+        existing_categories = CarCategory.objects.filter(id__in=category_ids, user=request.user).values_list('id', flat=True)
+        missing_categories = set(category_ids) - set(existing_categories)
+        if missing_categories:
+            return Response(
+                {'error': f'Categories with IDs {list(missing_categories)} do not exist or do not belong to you'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create order number
+        today = datetime.now().date()
+        date_str = today.strftime('%Y%m%d')
+        last_order = Order.objects.filter(order_number__startswith=f'ORD-{date_str}').order_by('-order_number').first()
+        new_num = int(last_order.order_number.split('-')[-1]) + 1 if last_order else 1
+        order_number = f'ORD-{date_str}-{new_num:03d}'
+
+        # Calculate total_amount
+        total_amount = sum(
+            item.get('auction_fee', 0) + item['vehicle_price'] +
+            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
+            item.get('service_fee', 0)
+            for item in items_data
+        )
+
+        # Create order
+        with transaction.atomic():
+            order = Order.objects.create(
+                user=request.user,
+                order_number=order_number,
+                total_amount=total_amount,
+                customer_name=other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction'] else other_details.get('saler_name', ''),
+                other_details=other_details,
+                transaction_type=data['transaction_type'],
+                transaction_catagory=data['transaction_catagory'],
+                transaction_date=data['transaction_date'],
+                payment_status=data['payment_status'],
+                notes=data.get('notes', ''),
+                customer=customer if data['transaction_type'] in ['sale', 'auction'] else None,
+                saler=saler if data['transaction_type'] == 'purchase' else None,
+                company_account=company_account,
+                auction=auction,
+                transaction=transaction_obj
+            )
+
+            for item_data in items_data:
+                category = CarCategory.objects.get(id=item_data['category'])
+                car, _ = Car.objects.get_or_create(
+                    user=request.user,
+                    category_id=item_data['category'],
+                    model=item_data['model'],
+                    chassis_number=item_data['chassis_number'],
+                    year=item_data['year']
+                )
+
+                subtotal = (
+                    item_data.get('auction_fee', 0) + item_data['vehicle_price'] +
+                    item_data.get('recycling_fee', 0) + item_data.get('automobile_tax', 0) +
+                    item_data.get('service_fee', 0)
+                )
+
+                OrderItem.objects.create(
+                    order=order,
+                    car=car,
+                    car_category=category,
+                    venue=item_data.get('venue', ''),
+                    year_type=item_data.get('year_type', ''),
+                    auction_fee=item_data.get('auction_fee', 0),
+                    vehicle_price=item_data['vehicle_price'],
+                    recycling_fee=item_data.get('recycling_fee', 0),
+                    automobile_tax=item_data.get('automobile_tax', 0),
+                    service_fee=item_data.get('service_fee', 0),
+                    notes=item_data.get('notes', '')
+                )
+
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['post'])
+    def update_with_items(self, request, pk=None):
+        order = self.get_object()
+        serializer = CreateOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        items_data = data.pop('items')
+        customer_id = data.pop('customer_id', None)
+        saler_id = data.pop('saler_id', None)
+        company_account_id = data.pop('company_account_id', None)
+        auction_id = data.pop('auction_id', None)
+        transaction_id = data.pop('transaction', None)
+
+        # Validate foreign keys
+        customer = None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id, user=request.user)
+            except Customer.DoesNotExist:
+                return Response({'error': 'Customer not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        saler = None
+        if saler_id:
+            try:
+                saler = Saler.objects.get(id=saler_id, user=request.user)
+            except Saler.DoesNotExist:
+                return Response({'error': 'Saler not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_account = None
+        if company_account_id:
+            try:
+                company_account = CompanyAccount.objects.get(id=company_account_id, user=request.user)
+            except CompanyAccount.DoesNotExist:
+                return Response({'error': 'Company account not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        auction = None
+        if auction_id:
+            try:
+                auction = Auction.objects.get(id=auction_id, user=request.user)
+            except Auction.DoesNotExist:
+                return Response({'error': 'Auction not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        transaction_obj = None
+        if transaction_id:
+            try:
+                transaction_obj = Transaction.objects.get(id=transaction_id, user=request.user)
+            except Transaction.DoesNotExist:
+                return Response({'error': 'Transaction not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Move all extra fields into other_details
+        other_details = {
+            'customer_name': data.pop('customer_name', ''),
+            'saler_name': data.pop('saler_name', ''),
+            'seller_name': data.pop('seller_name', ''),
+            'phone': data.pop('phone', ''),
+            'address': data.pop('address', ''),
+            'payment_method': data.pop('payment_method', ''),
+            'account_number': data.pop('account_number', ''),
+            'my_payment_method': data.pop('my_payment_method', ''),
+            'my_account_number': data.pop('my_account_number', ''),
+            'auction_house': data.pop('auction_house', '')
+        }
+
+        # Check categories exist
+        category_ids = [item['category'] for item in items_data]
+        existing_categories = CarCategory.objects.filter(id__in=category_ids, user=request.user).values_list('id', flat=True)
+        missing_categories = set(category_ids) - set(existing_categories)
+        if missing_categories:
+            return Response(
+                {'error': f'Categories with IDs {list(missing_categories)} do not exist or do not belong to you'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Calculate total_amount
+        total_amount = sum(
+            item.get('auction_fee', 0) + item['vehicle_price'] +
+            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
+            item.get('service_fee', 0)
+            for item in items_data
+        )
+
+        # Update order
+        with transaction.atomic():
+            order.total_amount = total_amount
+            order.customer_name = other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction'] else other_details.get('saler_name', '')
+            order.other_details = other_details
+            order.transaction_type = data['transaction_type']
+            order.transaction_catagory = data['transaction_catagory']
+            order.transaction_date = data['transaction_date']
+            order.payment_status = data['payment_status']
+            order.notes = data.get('notes', '')
+            order.customer = customer if data['transaction_type'] in ['sale', 'auction'] else None
+            order.saler = saler if data['transaction_type'] == 'purchase' else None
+            order.company_account = company_account
+            order.auction = auction
+            order.transaction = transaction_obj
+            order.save()
+
+            # Delete existing items
+            order.items.all().delete()
+
+            # Create new items
+            for item_data in items_data:
+                category = CarCategory.objects.get(id=item_data['category'])
+                car, _ = Car.objects.get_or_create(
+                    user=request.user,
+                    category_id=item_data['category'],
+                    model=item_data['model'],
+                    chassis_number=item_data['chassis_number'],
+                    year=item_data['year']
+                )
+
+                OrderItem.objects.create(
+                    order=order,
+                    car=car,
+                    car_category=category,
+                    venue=item_data.get('venue', ''),
+                    year_type=item_data.get('year_type', ''),
+                    auction_fee=item_data.get('auction_fee', 0),
+                    vehicle_price=item_data['vehicle_price'],
+                    recycling_fee=item_data.get('recycling_fee', 0),
+                    automobile_tax=item_data.get('automobile_tax', 0),
+                    service_fee=item_data.get('service_fee', 0),
+                    notes=item_data.get('notes', '')
+                )
+
+        return Response(OrderSerializer(order).data)
         serializer = CreateOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -329,8 +621,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         doc.build(
             elements,
-            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
-            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
+            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, "Ilyas Sons 合同会社"),
+            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, "Ilyas Sons 合同会社"),
         )
 
         return response
