@@ -22,7 +22,8 @@ from django.conf import settings
 from apps.account.models import User
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase import pdfmetrics
-
+from reportlab.platypus import Image
+from reportlab.lib.utils import ImageReader
 
 class CarCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CarCategorySerializer
@@ -621,13 +622,40 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         doc.build(
             elements,
-            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, "Ilyas Sons 合同会社"),
-            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, "Ilyas Sons 合同会社"),
+            onFirstPage=self._add_page_decorations,
+            onLaterPages=self._add_page_decorations,
         )
 
         return response
 
+    def _add_page_decorations(self, canvas, doc):
+        from django.conf import settings
+        import os
+        from reportlab.lib.utils import ImageReader
+        self._add_watermark(canvas, doc, "Ilyas Sons 合同会社")
 
+        logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
+        print(logo_path)
+        print('#########################################')
+        if os.path.exists(logo_path):
+            print('#########################################')
+            logo = ImageReader(logo_path)
+
+            logo_width = 120
+            logo_height = 40
+
+            x = doc.leftMargin
+            y = doc.pagesize[1] - logo_height - 10
+
+            canvas.drawImage(
+                logo,
+                x,
+                y,
+                width=logo_width,
+                height=logo_height,
+                mask='auto'
+            )
+    
     # ======================================================
     # HEADER SECTION WITH COMPANY AND INVOICE INFO
     # ======================================================

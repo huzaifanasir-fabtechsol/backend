@@ -37,6 +37,48 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    def _add_watermark(self, canvas, doc, text="INVOICE"):
+            canvas.saveState()
+            canvas.setFont("HeiseiMin-W3", 80)
+            canvas.setFillColor(colors.lightgrey)
+            canvas.setFillAlpha(0.15)
+
+            width, height = doc.pagesize
+            canvas.translate(width / 2, height / 2)
+            canvas.rotate(45)
+            canvas.drawCentredString(0, 0, text)
+
+            canvas.restoreState()
+
+    def _add_page_decorations(self, canvas, doc):
+        from django.conf import settings
+        import os
+        from reportlab.lib.utils import ImageReader
+        self._add_watermark(canvas, doc, "Ilyas Sons 合同会社")
+
+        logo_path = os.path.join(settings.MEDIA_ROOT, "logo.png")
+        print(logo_path)
+        print('#########################################')
+        if os.path.exists(logo_path):
+            print('#########################################')
+            logo = ImageReader(logo_path)
+
+            logo_width = 120
+            logo_height = 40
+
+            x = doc.leftMargin
+            y = doc.pagesize[1] - logo_height - 10
+
+            canvas.drawImage(
+                logo,
+                x,
+                y,
+                width=logo_width,
+                height=logo_height,
+                mask='auto'
+            )
+
+
     @action(detail=True, methods=['get'])
     def generate_receipt(self, request, pk=None):
         expense = self.get_object()
@@ -102,8 +144,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8)
         ]))
         elements.append(detail_table)
-
-        doc.build(elements)
+        doc.build(
+            elements,
+            onFirstPage=self._add_page_decorations,
+            onLaterPages=self._add_page_decorations,
+        )
         return response
 
     @action(detail=False, methods=['get'])
@@ -207,7 +252,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         ]))
         elements.append(table)
 
-        doc.build(elements)
+        doc.build(
+            elements,
+            onFirstPage=self._add_page_decorations,
+            onLaterPages=self._add_page_decorations,
+        )
         return response
 
     @action(detail=False, methods=['get'])
