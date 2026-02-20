@@ -199,9 +199,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Calculate total_amount
         total_amount = sum(
             item.get('auction_fee', 0) + item['vehicle_price'] +
-            item.get('consumption_tax', 0) + item.get('recycling_fee', 0) +
-            item.get('automobile_tax', 0) + item.get('bid_fee', 0) +
-            item.get('bid_fee_tax', 0)
+            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
+            item.get('service_fee', 0)
             for item in items_data
         )
 
@@ -237,9 +236,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
                 subtotal = (
                     item_data.get('auction_fee', 0) + item_data['vehicle_price'] +
-                    item_data.get('consumption_tax', 0) + item_data.get('recycling_fee', 0) +
-                    item_data.get('automobile_tax', 0) + item_data.get('bid_fee', 0) +
-                    item_data.get('bid_fee_tax', 0)
+                    item_data.get('recycling_fee', 0) + item_data.get('automobile_tax', 0) +
+                    item_data.get('service_fee', 0)
                 )
 
                 OrderItem.objects.create(
@@ -247,15 +245,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                     car=car,
                     car_category=category,
                     venue=item_data.get('venue', ''),
-                    year_type=item_data.get('year', ''),
+                    year_type=item_data.get('year_type', ''),
                     auction_fee=item_data.get('auction_fee', 0),
                     vehicle_price=item_data['vehicle_price'],
-                    consumption_tax=item_data.get('consumption_tax', 0),
                     recycling_fee=item_data.get('recycling_fee', 0),
                     automobile_tax=item_data.get('automobile_tax', 0),
-                    bid_fee=item_data.get('bid_fee', 0),
-                    bid_fee_tax=item_data.get('bid_fee_tax', 0),
-                    subtotal=subtotal,
+                    service_fee=item_data.get('service_fee', 0),
                     notes=item_data.get('notes', '')
                 )
 
@@ -334,8 +329,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         doc.build(
             elements,
-            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, "請求書"),
-            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, "請求書"),
+            onFirstPage=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
+            onLaterPages=lambda canvas, doc: self._add_watermark(canvas, doc, user.company_name),
         )
 
         return response
@@ -488,7 +483,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'NO.', '会場名', '年式', 'モデル', 'シャーシ',
             'オークション料', '車両価格', '消費税',
             'リサイクル料', '自動車税',
-            '入札料', '入札料税', '合計'
+            '落札手数料', '消費税', '合計'
         ]
         
         # Add auction house column if specified
@@ -499,8 +494,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         data = [header]
         totals = {
             'auction_fee': 0, 'vehicle_price': 0, 'consumption_tax': 0,
-            'recycling_fee': 0, 'automobile_tax': 0, 'bid_fee': 0,
-            'bid_fee_tax': 0, 'subtotal': 0
+            'recycling_fee': 0, 'automobile_tax': 0, 'service_fee': 0,
+            'service_fee_tax': 0, 'subtotal': 0
         }
 
         for idx, item in enumerate(order.items.all(), 1):
@@ -509,8 +504,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 item.car.model or '', item.car.chassis_number or '',
                 f'{item.auction_fee:,.0f}', f'{item.vehicle_price:,.0f}',
                 f'{item.consumption_tax:,.0f}', f'{item.recycling_fee:,.0f}',
-                f'{item.automobile_tax:,.0f}', f'{item.bid_fee:,.0f}',
-                f'{item.bid_fee_tax:,.0f}', f'{item.subtotal:,.0f}'
+                f'{item.automobile_tax:,.0f}', f'{item.service_fee:,.0f}',
+                f'{item.service_fee_tax:,.0f}', f'{item.subtotal:,.0f}'
             ]
             
             if auction_house:
@@ -525,8 +520,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             '', '', '', '', '合計',
             f'{totals["auction_fee"]:,.0f}', f'{totals["vehicle_price"]:,.0f}',
             f'{totals["consumption_tax"]:,.0f}', f'{totals["recycling_fee"]:,.0f}',
-            f'{totals["automobile_tax"]:,.0f}', f'{totals["bid_fee"]:,.0f}',
-            f'{totals["bid_fee_tax"]:,.0f}', f'{totals["subtotal"]:,.0f}'
+            f'{totals["automobile_tax"]:,.0f}', f'{totals["service_fee"]:,.0f}',
+            f'{totals["service_fee_tax"]:,.0f}', f'{totals["subtotal"]:,.0f}'
         ]
         
         if auction_house:

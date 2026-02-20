@@ -22,12 +22,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = ['id', 'car', 'car_name', 'venue', 'year_type', 'auction_fee', 'vehicle_price', 
-                  'consumption_tax', 'recycling_fee', 'automobile_tax', 'bid_fee', 'bid_fee_tax', 
+                  'consumption_tax', 'recycling_fee', 'automobile_tax', 'service_fee', 'service_fee_tax', 
                   'subtotal', 'notes']
 
 class OrderItemCreateSerializer(serializers.Serializer):
     category = serializers.IntegerField()
-    # name = serializers.CharField(max_length=100)
     model = serializers.CharField(max_length=100)
     chassis_number = serializers.CharField(max_length=50)
     year = serializers.IntegerField()
@@ -35,11 +34,9 @@ class OrderItemCreateSerializer(serializers.Serializer):
     year_type = serializers.CharField(required=False, allow_blank=True)
     auction_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     vehicle_price = serializers.DecimalField(max_digits=12, decimal_places=2)
-    consumption_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     recycling_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     automobile_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    bid_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    bid_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
+    service_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     notes = serializers.CharField(required=False, allow_blank=True)
 
 class OrderSerializer(serializers.ModelSerializer):

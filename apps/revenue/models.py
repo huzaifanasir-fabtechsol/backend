@@ -1,5 +1,6 @@
 from django.db import models
 from apps.account.models import BaseModel, User
+from decimal import Decimal
 
 class CarCategory(BaseModel):
     name = models.CharField(max_length=100, unique=True)
@@ -70,19 +71,21 @@ class Order(BaseModel):
         return f"{self.order_number} - {self.transaction_type}"
 
 class OrderItem(BaseModel):
+    TAX_RATE = Decimal('0.10')  # 10% consumption tax
+    
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     car = models.ForeignKey(Car, on_delete=models.CASCADE)
     car_category = models.ForeignKey(CarCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='order_items')
-    venue = models.CharField(max_length=50, blank=True)
-    year_type = models.CharField(max_length=10, blank=True)
-    auction_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    vehicle_price = models.DecimalField(max_digits=12, decimal_places=2)
-    consumption_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    recycling_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    automobile_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    bid_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    bid_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2)
+    venue = models.CharField(max_length=100, blank=True)  # 会場 Auction Venue
+    year_type = models.CharField(max_length=20, blank=True)  # 平成年式 Year
+    auction_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 落札料 Auction Fee
+    vehicle_price = models.DecimalField(max_digits=12, decimal_places=2)  # 両代金 Vehicle Price
+    consumption_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 消費税 Consumption Tax
+    recycling_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # リサイクル料 Recycling Fee
+    automobile_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 自動車税 Automobile Tax
+    service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 落札手数料 Winning Bid Service Fee
+    service_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 消費税 Tax on Service Fee
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2)  # 合計 Total
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -90,6 +93,28 @@ class OrderItem(BaseModel):
 
     def __str__(self):
         return f"{self.order.order_number} - {self.car.category}"
+    
+    def save(self, *args, **kwargs):
+        # Auto-calculate consumption tax (10% on vehicle price + auction fee)
+        taxable_amount = self.vehicle_price + self.auction_fee
+        self.consumption_tax = (taxable_amount * self.TAX_RATE).quantize(Decimal('0.01'))
+        
+        # Auto-calculate service fee tax
+        if self.service_fee > 0:
+            self.service_fee_tax = (self.service_fee * self.TAX_RATE).quantize(Decimal('0.01'))
+        
+        # Calculate subtotal
+        self.subtotal = (
+            self.vehicle_price + 
+            self.auction_fee + 
+            self.consumption_tax + 
+            self.recycling_fee + 
+            self.automobile_tax + 
+            self.service_fee + 
+            self.service_fee_tax
+        )
+        
+        super().save(*args, **kwargs)
 
 class Customer(BaseModel):
     name = models.CharField(max_length=200)
