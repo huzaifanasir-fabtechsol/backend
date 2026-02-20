@@ -1180,7 +1180,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 Q(description__icontains=search) |
                 Q(notes__icontains=search) |
                 Q(transaction_id__icontains=search) |
-                Q(amount__icontains=search)
+                Q(balance__icontains=search) |
+                Q(deposit__icontains=search) |
+                Q(withdraw__icontains=search)
             )
         if date:
             queryset = queryset.filter(date=date)
