@@ -32,7 +32,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Expense.objects.filter(user=self.request.user)
+        return Expense.objects.filter(user=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -261,9 +261,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         search = request.query_params.get('search', '')
         date = request.query_params.get('date', '')
         account_id = request.query_params.get('account_id', '')
-        
+
         queryset = Transaction.objects.filter(user=request.user)
-        
+
         if account_id:
             queryset = queryset.filter(company_account_id=account_id)
         if search:
@@ -273,7 +273,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             )
         if date:
             queryset = queryset.filter(date=date)
-            
+
         serializer = TransactionSerializer(queryset, many=True)
         return Response(serializer.data)
 
