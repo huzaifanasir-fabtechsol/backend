@@ -279,7 +279,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         is_auction = order.transaction_type == 'auction'
         pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
-        user = User.objects.filter(role='admin').first()
+        user = User.objects.filter(email='user@example.com').first()
         if not user:
             return Response({'error': 'Admin user not found'}, status=404)
 
@@ -288,7 +288,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             f'attachment; filename="Invoice_{order.order_number}.pdf"'
         )
 
-        pagesize = landscape(A4) if is_auction else A4
+        pagesize = landscape(A4)
+        # pagesize = landscape(A4) if is_auction else A4
 
         doc = SimpleDocTemplate(
             response,
@@ -328,7 +329,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if is_auction:
             elements.append(self._build_auction_table(order, doc, styles))
         else:
-            elements.append(self._build_standard_table(order, doc, styles))
+            elements.append(self._build_auction_table(order, doc, styles))
+            # elements.append(self._build_standard_table(order, doc, styles))
 
         doc.build(
             elements,
@@ -385,24 +387,24 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
     def _build_bank_customer_section(self, order, doc, styles):
         if order.transaction_type == 'purchase':
-            # Purchase: Company bank on left, Saler info on right
             left_data = self._get_company_bank_info(order)
+            middle_data = self._get_additional_info(order, styles)
             right_data = self._get_saler_info(order)
         else:
-            # Sale/Auction: Company bank on left, Customer info on right
             left_data = self._get_company_bank_info(order)
+            middle_data = self._get_additional_info(order, styles)
             right_data = self._get_customer_info(order)
         
-        # Create two-column layout
         section_data = []
-        max_rows = max(len(left_data), len(right_data))
+        max_rows = max(len(left_data), len(middle_data), len(right_data))
         
         for i in range(max_rows):
             left_cell = left_data[i] if i < len(left_data) else ""
+            middle_cell = middle_data[i] if i < len(middle_data) else ""
             right_cell = right_data[i] if i < len(right_data) else ""
-            section_data.append([left_cell, "", right_cell])
+            section_data.append([left_cell, middle_cell, right_cell])
         
-        section_table = Table(section_data, colWidths=[doc.width * 0.45, doc.width * 0.1, doc.width * 0.45])
+        section_table = Table(section_data, colWidths=[doc.width * 0.33, doc.width * 0.33, doc.width * 0.34])
         section_table.setStyle(TableStyle([
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -410,6 +412,28 @@ class OrderViewSet(viewsets.ModelViewSet):
         ]))
         
         return section_table
+    
+    def _get_additional_info(self, order, styles):
+        data = []
+        
+        if order.auction:
+            data.append(f"オークションハウス: {order.auction.name}")
+        
+        if order.transaction:
+            data.append(f"取引ID: {order.transaction.transaction_id or order.transaction.description}")
+        
+        grand_total = sum(item.subtotal for item in order.items.all())
+        total_style = ParagraphStyle(
+            'TotalAmount',
+            parent=styles['Normal'],
+            fontSize=14,
+            fontName='HeiseiMin-W3',
+            textColor=colors.black
+        )
+        total_para = Paragraph(f"<b>合計金額 ¥ {grand_total:,.0f}</b>", total_style)
+        data.append(total_para)
+        
+        return data
     
     def _get_company_bank_info(self, order):
         data = []
@@ -426,18 +450,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         data = []
         
         if order.customer:
-            data.append(order.customer.address or "")
-            data.append(order.customer.name or "")
+            data.append(f"顧客の住所: {order.customer.address}" or "")
+            data.append(f"顧客名: {order.customer.name}" or "")
             if hasattr(order.customer, 'bank_name') and order.customer.bank_name:
                 data.append(f"銀行: {order.customer.bank_name}")
                 data.append(f"口座: {order.customer.account_number}")
         else:
             data.append(od.get('address', ''))
             data.append(od.get('customer_name', ''))
-        
-        # Add total amount
-        grand_total = sum(item.subtotal for item in order.items.all())
-        data.append(f"合計金額 ¥ {grand_total:,.0f}")
         
         return data
     
@@ -446,8 +466,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         data = []
         
         if order.saler:
-            data.append(order.saler.address or "")
-            data.append(order.saler.name or "")
+            data.append(f"販売者の住所: {order.saler.address}" or "")
+            data.append(f"販売者名: {order.saler.name}" or "")
             if hasattr(order.saler, 'bank_name') and order.saler.bank_name:
                 data.append(f"銀行: {order.saler.bank_name}")
                 data.append(f"口座: {order.saler.account_number}")

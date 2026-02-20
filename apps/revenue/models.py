@@ -23,11 +23,11 @@ class Car(BaseModel):
     year = models.IntegerField()
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cars')
 
-    class Meta:
+    class Meta: 
         db_table = 'cars'
 
     def __str__(self):
-        return f"{self.name} - {self.chassis_number}"
+        return f"{self.category} - {self.chassis_number}"
 
 class Order(BaseModel):
     TRANSACTION_TYPES = [
