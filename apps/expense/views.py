@@ -55,7 +55,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Q(category__name__icontains=search) |
                 Q(restaurant__name__icontains=search) |
                 Q(spare_part__name__icontains=search) |
-                Q(spare_part__part_number__icontains=search)
+                Q(spare_part__location__icontains=search)
             )
 
         return queryset.order_by('-date', '-id')
@@ -170,9 +170,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             detail_data.append(["レストラン:", expense.restaurant.name])
         if expense.spare_part:
             spare_part_text = expense.spare_part.name
-            if expense.spare_part.part_number:
-                spare_part_text = f"{spare_part_text} ({expense.spare_part.part_number})"
-            detail_data.append(["スペアパーツ:", spare_part_text])
+            if expense.spare_part.location:
+                spare_part_text = f"{spare_part_text} - {expense.spare_part.location}"
+            detail_data.append(["ショップ:", spare_part_text])
 
         detail_table = Table(detail_data, colWidths=[doc.width * 0.3, doc.width * 0.7])
         detail_table.setStyle(TableStyle([
@@ -210,7 +210,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Q(description__icontains=search) |
                 Q(category__name__icontains=search) |
                 Q(spare_part__name__icontains=search) |
-                Q(spare_part__part_number__icontains=search)
+                Q(spare_part__location__icontains=search)
             )
 
         response = HttpResponse(content_type='application/pdf')
@@ -274,14 +274,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             alignment=TA_RIGHT,
         )
 
-        table_data = [['Sr', '日付', 'タイトル', 'カテゴリ', '取引', 'レストラン', 'スペアパーツ', '額']]
+        table_data = [['Sr', '日付', 'タイトル', 'カテゴリ', '取引', 'レストラン', 'ショップ', '額']]
         total = 0
         for idx, expense in enumerate(queryset, 1):
             spare_part_text = '-'
             if expense.spare_part:
                 spare_part_text = expense.spare_part.name
-                if expense.spare_part.part_number:
-                    spare_part_text = f"{spare_part_text} ({expense.spare_part.part_number})"
+                if expense.spare_part.location:
+                    spare_part_text = f"{spare_part_text} - {expense.spare_part.location}"
             table_data.append([
                 str(idx),
                 str(expense.date),
@@ -383,8 +383,7 @@ class SparePartViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
-                Q(part_number__icontains=search) |
-                Q(brand__icontains=search) |
+                Q(location__icontains=search) |
                 Q(description__icontains=search)
             )
         return queryset

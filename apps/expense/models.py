@@ -46,8 +46,7 @@ class Restaurant(BaseModel):
 
 class SparePart(BaseModel):
     name = models.CharField(max_length=200)
-    part_number = models.CharField(max_length=120, blank=True)
-    brand = models.CharField(max_length=120, blank=True)
+    location = models.CharField(max_length=300, blank=True)
     description = models.TextField(blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='spare_parts')
 

@@ -17,7 +17,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
 class SparePartSerializer(serializers.ModelSerializer):
     class Meta:
         model = SparePart
-        fields = ['id', 'name', 'part_number', 'brand', 'description', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'location', 'description', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 
@@ -42,7 +42,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
         is_spare_parts = bool(category and category.name and category.name.strip().upper() == 'SPARE PARTS')
         if is_spare_parts and not spare_part:
-            raise serializers.ValidationError({'spare_part': 'Spare part is required when category is SPARE PARTS.'})
+            raise serializers.ValidationError({'spare_part': 'Shop is required when category is SPARE PARTS.'})
         if not is_spare_parts:
             attrs['spare_part'] = None
         return attrs
@@ -62,7 +62,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             data['spare_part'] = {
                 'id': instance.spare_part.id,
                 'name': instance.spare_part.name,
-                'part_number': instance.spare_part.part_number,
+                'location': instance.spare_part.location,
             }
         else:
             data['spare_part'] = None
