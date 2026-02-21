@@ -41,8 +41,8 @@ class ExpenseSerializer(serializers.ModelSerializer):
             spare_part = self.instance.spare_part
 
         is_spare_parts = bool(category and category.name and category.name.strip().upper() == 'SPARE PARTS')
-        if is_spare_parts and not spare_part:
-            raise serializers.ValidationError({'spare_part': 'Shop is required when category is SPARE PARTS.'})
+        # if is_spare_parts and not spare_part:
+        #     raise serializers.ValidationError({'spare_part': 'Shop is required when category is SPARE PARTS.'})
         if not is_spare_parts:
             attrs['spare_part'] = None
         return attrs
