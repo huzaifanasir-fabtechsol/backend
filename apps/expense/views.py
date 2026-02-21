@@ -55,7 +55,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Q(category__name__icontains=search) |
                 Q(restaurant__name__icontains=search) |
                 Q(spare_part__name__icontains=search) |
-                Q(spare_part__location__icontains=search)
+                Q(spare_part__address__icontains=search)
             )
 
         return queryset.order_by('-date', '-id')
@@ -170,8 +170,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             detail_data.append(["レストラン:", expense.restaurant.name])
         if expense.spare_part:
             spare_part_text = expense.spare_part.name
-            if expense.spare_part.location:
-                spare_part_text = f"{spare_part_text} - {expense.spare_part.location}"
+            if expense.spare_part.address:
+                spare_part_text = f"{spare_part_text} - {expense.spare_part.address}"
             detail_data.append(["店:", spare_part_text])
 
         detail_table = Table(detail_data, colWidths=[doc.width * 0.3, doc.width * 0.7])
@@ -210,7 +210,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Q(description__icontains=search) |
                 Q(category__name__icontains=search) |
                 Q(spare_part__name__icontains=search) |
-                Q(spare_part__location__icontains=search)
+                Q(spare_part__address__icontains=search)
             )
 
         response = HttpResponse(content_type='application/pdf')
@@ -280,8 +280,8 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             spare_part_text = '-'
             if expense.spare_part:
                 spare_part_text = expense.spare_part.name
-                if expense.spare_part.location:
-                    spare_part_text = f"{spare_part_text} - {expense.spare_part.location}"
+                if expense.spare_part.address:
+                    spare_part_text = f"{spare_part_text} - {expense.spare_part.address}"
             table_data.append([
                 str(idx),
                 str(expense.date),
@@ -383,7 +383,7 @@ class SparePartViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search) |
-                Q(location__icontains=search) |
+                Q(address__icontains=search) |
                 Q(description__icontains=search)
             )
         return queryset

@@ -15,5 +15,5 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(SparePart)
 class SparePartAdmin(admin.ModelAdmin):
-    list_display = ['name', 'location', 'user', 'created_at']
-    search_fields = ['name', 'location']
+    list_display = ['name', 'address', 'user', 'created_at']
+    search_fields = ['name', 'address']

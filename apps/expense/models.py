@@ -46,7 +46,10 @@ class Restaurant(BaseModel):
 
 class SparePart(BaseModel):
     name = models.CharField(max_length=200)
-    location = models.CharField(max_length=300, blank=True)
+    # Legacy compatibility for deployments where these columns already exist as NOT NULL.
+    part_number = models.CharField(max_length=120, blank=True, default='', editable=False)
+    brand = models.CharField(max_length=120, blank=True, default='', editable=False)
+    address = models.CharField(max_length=300, blank=True, db_column='location')
     description = models.TextField(blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='spare_parts')
 

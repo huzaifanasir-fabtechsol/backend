@@ -17,7 +17,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
 class SparePartSerializer(serializers.ModelSerializer):
     class Meta:
         model = SparePart
-        fields = ['id', 'name', 'location', 'description', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'address', 'description', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 
@@ -62,7 +62,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
             data['spare_part'] = {
                 'id': instance.spare_part.id,
                 'name': instance.spare_part.name,
-                'location': instance.spare_part.location,
+                'address': instance.spare_part.address,
             }
         else:
             data['spare_part'] = None
