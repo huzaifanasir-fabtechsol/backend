@@ -172,7 +172,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             spare_part_text = expense.spare_part.name
             if expense.spare_part.location:
                 spare_part_text = f"{spare_part_text} - {expense.spare_part.location}"
-            detail_data.append(["ショップ:", spare_part_text])
+            detail_data.append(["店:", spare_part_text])
 
         detail_table = Table(detail_data, colWidths=[doc.width * 0.3, doc.width * 0.7])
         detail_table.setStyle(TableStyle([
