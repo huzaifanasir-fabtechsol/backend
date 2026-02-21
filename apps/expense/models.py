@@ -21,6 +21,7 @@ class Expense(BaseModel):
     category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True, related_name='expenses')
     transaction = models.ForeignKey('revenue.Transaction', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
     restaurant = models.ForeignKey('Restaurant', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
+    spare_part = models.ForeignKey('SparePart', on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
 
     class Meta:
@@ -38,6 +39,20 @@ class Restaurant(BaseModel):
 
     class Meta:
         db_table = 'restaurants'
+
+    def __str__(self):
+        return self.name
+
+
+class SparePart(BaseModel):
+    name = models.CharField(max_length=200)
+    part_number = models.CharField(max_length=120, blank=True)
+    brand = models.CharField(max_length=120, blank=True)
+    description = models.TextField(blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='spare_parts')
+
+    class Meta:
+        db_table = 'spare_parts'
 
     def __str__(self):
         return self.name

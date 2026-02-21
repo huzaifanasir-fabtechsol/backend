@@ -11,8 +11,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase import pdfmetrics
-from apps.expense.models import Expense, ExpenseCategory, Restaurant
-from apps.expense.serializers import ExpenseSerializer, ExpenseCategorySerializer, RestaurantSerializer
+from apps.expense.models import Expense, ExpenseCategory, Restaurant, SparePart
+from apps.expense.serializers import ExpenseSerializer, ExpenseCategorySerializer, RestaurantSerializer, SparePartSerializer
 from apps.revenue.models import Transaction
 from apps.revenue.serializers import TransactionSerializer
 from apps.account.models import User
@@ -53,7 +53,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Q(title__icontains=search) |
                 Q(description__icontains=search) |
                 Q(category__name__icontains=search) |
-                Q(restaurant__name__icontains=search)
+                Q(restaurant__name__icontains=search) |
+                Q(spare_part__name__icontains=search) |
+                Q(spare_part__part_number__icontains=search)
             )
 
         return queryset.order_by('-date', '-id')
@@ -166,6 +168,11 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         if expense.restaurant:
             detail_data.append(["レストラン:", expense.restaurant.name])
+        if expense.spare_part:
+            spare_part_text = expense.spare_part.name
+            if expense.spare_part.part_number:
+                spare_part_text = f"{spare_part_text} ({expense.spare_part.part_number})"
+            detail_data.append(["スペアパーツ:", spare_part_text])
 
         detail_table = Table(detail_data, colWidths=[doc.width * 0.3, doc.width * 0.7])
         detail_table.setStyle(TableStyle([
@@ -201,7 +208,9 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(
                 Q(title__icontains=search) |
                 Q(description__icontains=search) |
-                Q(category__name__icontains=search)
+                Q(category__name__icontains=search) |
+                Q(spare_part__name__icontains=search) |
+                Q(spare_part__part_number__icontains=search)
             )
 
         response = HttpResponse(content_type='application/pdf')
@@ -265,9 +274,14 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             alignment=TA_RIGHT,
         )
 
-        table_data = [['Sr', '日付', 'タイトル', 'カテゴリ', '取引', 'レストラン', '額']]
+        table_data = [['Sr', '日付', 'タイトル', 'カテゴリ', '取引', 'レストラン', 'スペアパーツ', '額']]
         total = 0
         for idx, expense in enumerate(queryset, 1):
+            spare_part_text = '-'
+            if expense.spare_part:
+                spare_part_text = expense.spare_part.name
+                if expense.spare_part.part_number:
+                    spare_part_text = f"{spare_part_text} ({expense.spare_part.part_number})"
             table_data.append([
                 str(idx),
                 str(expense.date),
@@ -275,6 +289,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
                 Paragraph(expense.category.name if expense.category else '-', cell_style),
                 Paragraph(f"{expense.transaction.transaction_id}" if expense.transaction else '-', cell_style),
                 Paragraph(expense.restaurant.name if expense.restaurant else '-', cell_style),
+                Paragraph(spare_part_text, cell_style),
                 Paragraph(f"¥ {expense.amount:,.0f}", right_cell_style)
             ])
             total += expense.amount
@@ -285,11 +300,12 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             '',
             '',
             '',
+            '',
             Paragraph('合計:', cell_style),
             Paragraph(f"¥ {total:,.0f}", right_cell_style)
         ])
 
-        table = Table(table_data, colWidths=[30, 60, 100, 85, 70, 130, 80])
+        table = Table(table_data, colWidths=[25, 55, 90, 70, 65, 95, 85, 70])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.black),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -350,6 +366,26 @@ class RestaurantViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(
                 Q(name__icontains=search) |
                 Q(location__icontains=search)
+            )
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class SparePartViewSet(viewsets.ModelViewSet):
+    serializer_class = SparePartSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = SparePart.objects.filter(user=self.request.user)
+        search = self.request.query_params.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) |
+                Q(part_number__icontains=search) |
+                Q(brand__icontains=search) |
+                Q(description__icontains=search)
             )
         return queryset
 

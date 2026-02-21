@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from apps.expense.models import Expense, ExpenseCategory, Restaurant
+from apps.expense.models import Expense, ExpenseCategory, Restaurant, SparePart
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -13,14 +13,39 @@ class RestaurantSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'location', 'description', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
+
+class SparePartSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SparePart
+        fields = ['id', 'name', 'part_number', 'brand', 'description', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+
 class ExpenseSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
+    spare_part_name = serializers.CharField(source='spare_part.name', read_only=True)
     
     class Meta:
         model = Expense
-        fields = ['id', 'title', 'amount', 'description', 'date', 'category', 'category_name', 'transaction', 'restaurant', 'restaurant_name', 'created_at', 'updated_at']
+        fields = ['id', 'title', 'amount', 'description', 'date', 'category', 'category_name', 'transaction', 'restaurant', 'restaurant_name', 'spare_part', 'spare_part_name', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
+
+    def validate(self, attrs):
+        category = attrs.get('category')
+        if not category and self.instance:
+            category = self.instance.category
+
+        spare_part = attrs.get('spare_part')
+        if spare_part is None and self.instance:
+            spare_part = self.instance.spare_part
+
+        is_spare_parts = bool(category and category.name and category.name.strip().upper() == 'SPARE PARTS')
+        if is_spare_parts and not spare_part:
+            raise serializers.ValidationError({'spare_part': 'Spare part is required when category is SPARE PARTS.'})
+        if not is_spare_parts:
+            attrs['spare_part'] = None
+        return attrs
     
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -33,4 +58,12 @@ class ExpenseSerializer(serializers.ModelSerializer):
             }
         else:
             data['transaction'] = None
+        if instance.spare_part:
+            data['spare_part'] = {
+                'id': instance.spare_part.id,
+                'name': instance.spare_part.name,
+                'part_number': instance.spare_part.part_number,
+            }
+        else:
+            data['spare_part'] = None
         return data
