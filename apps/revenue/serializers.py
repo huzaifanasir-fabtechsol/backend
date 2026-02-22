@@ -18,15 +18,20 @@ class CarSerializer(serializers.ModelSerializer):
 
 class OrderItemSerializer(serializers.ModelSerializer):
     car_name = serializers.CharField(source='car.category.name', read_only=True)
+    model = serializers.CharField(source='car.model', read_only=True)
+    chassis_number = serializers.CharField(source='car.chassis_number', read_only=True)
+    year = serializers.IntegerField(source='car.year', read_only=True)
     
     class Meta:
         model = OrderItem
-        fields = ['id', 'car', 'car_name', 'car_category', 'venue', 'notes',
+        fields = ['id', 'car', 'car_name', 'car_category', 'model', 'chassis_number', 'year', 'venue', 'notes',
                   'vehicle_price', 'vehicle_price_tax', 'recycle_fee',
                   'listing_fee', 'listing_fee_tax', 'successful_bid', 'successful_bid_tax',
                   'commission_fee', 'commission_fee_tax', 'transport_fee', 'transport_fee_tax',
                   'registration_fee', 'registration_fee_tax', 'canceling_fee',
                   'subtotal']
+        read_only_fields = ['subtotal']
+        read_only_fields = ['subtotal']
 
 class OrderItemCreateSerializer(serializers.Serializer):
     category = serializers.IntegerField()
