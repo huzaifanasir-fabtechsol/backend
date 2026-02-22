@@ -21,9 +21,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = OrderItem
-        fields = ['id', 'car', 'car_name', 'venue', 'year_type', 'auction_fee', 'vehicle_price', 
-                  'consumption_tax', 'recycling_fee', 'automobile_tax', 'service_fee', 'service_fee_tax', 
-                  'subtotal', 'notes']
+        fields = ['id', 'car', 'car_name', 'car_category', 'venue', 'notes',
+                  'vehicle_price', 'vehicle_price_tax', 'recycle_fee',
+                  'listing_fee', 'listing_fee_tax', 'successful_bid', 'successful_bid_tax',
+                  'commission_fee', 'commission_fee_tax', 'transport_fee', 'transport_fee_tax',
+                  'registration_fee', 'registration_fee_tax', 'canceling_fee',
+                  'subtotal']
 
 class OrderItemCreateSerializer(serializers.Serializer):
     category = serializers.IntegerField()
@@ -31,14 +34,24 @@ class OrderItemCreateSerializer(serializers.Serializer):
     chassis_number = serializers.CharField(max_length=50)
     year = serializers.IntegerField()
     venue = serializers.CharField(required=False, allow_blank=True)
-    year_type = serializers.CharField(required=False, allow_blank=True)
-    auction_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    vehicle_price = serializers.DecimalField(max_digits=12, decimal_places=2)
-    recycling_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    automobile_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
-    service_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0)
     notes = serializers.CharField(required=False, allow_blank=True)
-
+    
+    # New fields - all optional
+    vehicle_price = serializers.DecimalField(max_digits=12, decimal_places=2, default=0, required=False)
+    vehicle_price_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    recycle_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    listing_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    listing_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    successful_bid = serializers.DecimalField(max_digits=12, decimal_places=2, default=0, required=False)
+    successful_bid_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    commission_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    commission_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    transport_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    transport_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    registration_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    registration_fee_tax = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    canceling_fee = serializers.DecimalField(max_digits=10, decimal_places=2, default=0, required=False)
+    
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     auction_name = serializers.CharField(source='auction.name', read_only=True)

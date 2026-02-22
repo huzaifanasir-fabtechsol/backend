@@ -77,16 +77,47 @@ class OrderItem(BaseModel):
     car = models.ForeignKey(Car, on_delete=models.CASCADE)
     car_category = models.ForeignKey(CarCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='order_items')
     venue = models.CharField(max_length=100, blank=True)  # 会場 Auction Venue
-    year_type = models.CharField(max_length=20, blank=True)  # 平成年式 Year
-    auction_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 落札料 Auction Fee
-    vehicle_price = models.DecimalField(max_digits=12, decimal_places=2)  # 両代金 Vehicle Price
-    consumption_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 消費税 Consumption Tax
-    recycling_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # リサイクル料 Recycling Fee
-    automobile_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 自動車税 Automobile Tax
-    service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 落札手数料 Winning Bid Service Fee
-    service_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # 消費税 Tax on Service Fee
-    subtotal = models.DecimalField(max_digits=12, decimal_places=2)  # 合計 Total
     notes = models.TextField(blank=True)
+    
+    # Vehicle price and tax
+    vehicle_price = models.DecimalField(max_digits=12, decimal_places=2, default=0, blank=True)
+    vehicle_price_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Recycle fee (no tax)
+    recycle_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Listing fee and tax
+    listing_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    listing_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Successful bid and tax
+    successful_bid = models.DecimalField(max_digits=12, decimal_places=2, default=0, blank=True)
+    successful_bid_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Commission fee and tax
+    commission_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    commission_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Transport fee and tax
+    transport_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    transport_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Registration fee and tax
+    registration_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    registration_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Canceling fee (no tax)
+    canceling_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    
+    # Legacy fields (kept for backward compatibility)
+    year_type = models.CharField(max_length=20, blank=True)  # 平成年式 Year
+    auction_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # 落札料 Auction Fee
+    consumption_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # 消費税 Consumption Tax
+    recycling_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # リサイクル料 Recycling Fee
+    automobile_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # 自動車税 Automobile Tax
+    service_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # 落札手数料 Winning Bid Service Fee
+    service_fee_tax = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)  # 消費税 Tax on Service Fee
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0, blank=True)  # 合計 Total
 
     class Meta:
         db_table = 'order_items'
@@ -95,23 +126,16 @@ class OrderItem(BaseModel):
         return f"{self.order.order_number} - {self.car.category}"
     
     def save(self, *args, **kwargs):
-        # Auto-calculate consumption tax (10% on vehicle price + auction fee)
-        taxable_amount = self.vehicle_price + self.auction_fee
-        self.consumption_tax = (taxable_amount * self.TAX_RATE).quantize(Decimal('0.01'))
-        
-        # Auto-calculate service fee tax
-        if self.service_fee > 0:
-            self.service_fee_tax = (self.service_fee * self.TAX_RATE).quantize(Decimal('0.01'))
-        
-        # Calculate subtotal
+        # Calculate subtotal using the current fee structure.
         self.subtotal = (
-            self.vehicle_price + 
-            self.auction_fee + 
-            self.consumption_tax + 
-            self.recycling_fee + 
-            self.automobile_tax + 
-            self.service_fee + 
-            self.service_fee_tax
+            self.vehicle_price + self.vehicle_price_tax +
+            self.recycle_fee +
+            self.listing_fee + self.listing_fee_tax +
+            self.successful_bid + self.successful_bid_tax +
+            self.commission_fee + self.commission_fee_tax +
+            self.transport_fee + self.transport_fee_tax +
+            self.registration_fee + self.registration_fee_tax +
+            self.canceling_fee
         )
         
         super().save(*args, **kwargs)

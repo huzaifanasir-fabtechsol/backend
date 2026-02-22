@@ -129,6 +129,49 @@ class OrderViewSet(viewsets.ModelViewSet):
             'latest_orders': list(latest_orders)
         })
 
+    def _calculate_item_total(self, item):
+        return (
+            item.get('vehicle_price', 0) +
+            item.get('vehicle_price_tax', 0) +
+            item.get('recycle_fee', 0) +
+            item.get('listing_fee', 0) +
+            item.get('listing_fee_tax', 0) +
+            item.get('successful_bid', 0) +
+            item.get('successful_bid_tax', 0) +
+            item.get('commission_fee', 0) +
+            item.get('commission_fee_tax', 0) +
+            item.get('transport_fee', 0) +
+            item.get('transport_fee_tax', 0) +
+            item.get('registration_fee', 0) +
+            item.get('registration_fee_tax', 0) +
+            item.get('canceling_fee', 0)
+        )
+
+    def _build_order_item_payload(self, item_data):
+        def to_decimal(value):
+            if isinstance(value, str):
+                value = value.replace(',', '')
+            return float(value) if value else 0
+        
+        return {
+            'venue': item_data.get('venue', ''),
+            'notes': item_data.get('notes', ''),
+            'vehicle_price': to_decimal(item_data.get('vehicle_price', 0)),
+            'vehicle_price_tax': to_decimal(item_data.get('vehicle_price_tax', 0)),
+            'recycle_fee': to_decimal(item_data.get('recycle_fee', 0)),
+            'listing_fee': to_decimal(item_data.get('listing_fee', 0)),
+            'listing_fee_tax': to_decimal(item_data.get('listing_fee_tax', 0)),
+            'successful_bid': to_decimal(item_data.get('successful_bid', 0)),
+            'successful_bid_tax': to_decimal(item_data.get('successful_bid_tax', 0)),
+            'commission_fee': to_decimal(item_data.get('commission_fee', 0)),
+            'commission_fee_tax': to_decimal(item_data.get('commission_fee_tax', 0)),
+            'transport_fee': to_decimal(item_data.get('transport_fee', 0)),
+            'transport_fee_tax': to_decimal(item_data.get('transport_fee_tax', 0)),
+            'registration_fee': to_decimal(item_data.get('registration_fee', 0)),
+            'registration_fee_tax': to_decimal(item_data.get('registration_fee_tax', 0)),
+            'canceling_fee': to_decimal(item_data.get('canceling_fee', 0)),
+        }
+
     @action(detail=False, methods=['post'])
     def create_with_items(self, request):
         serializer = CreateOrderSerializer(data=request.data)
@@ -217,12 +260,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order_number = f'ORD-{date_str}-{new_num:03d}'
 
         # Calculate total_amount
-        total_amount = sum(
-            item.get('auction_fee', 0) + item['vehicle_price'] +
-            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
-            item.get('service_fee', 0)
-            for item in items_data
-        )
+        total_amount = sum(self._calculate_item_total(item) for item in items_data)
 
         # Create order
         with transaction.atomic():
@@ -254,24 +292,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                     year=item_data['year']
                 )
 
-                subtotal = (
-                    item_data.get('auction_fee', 0) + item_data['vehicle_price'] +
-                    item_data.get('recycling_fee', 0) + item_data.get('automobile_tax', 0) +
-                    item_data.get('service_fee', 0)
-                )
-
                 OrderItem.objects.create(
                     order=order,
                     car=car,
                     car_category=category,
-                    venue=item_data.get('venue', ''),
-                    year_type=item_data.get('year_type', ''),
-                    auction_fee=item_data.get('auction_fee', 0),
-                    vehicle_price=item_data['vehicle_price'],
-                    recycling_fee=item_data.get('recycling_fee', 0),
-                    automobile_tax=item_data.get('automobile_tax', 0),
-                    service_fee=item_data.get('service_fee', 0),
-                    notes=item_data.get('notes', '')
+                    **self._build_order_item_payload(item_data)
                 )
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
@@ -351,12 +376,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
 
         # Calculate total_amount
-        total_amount = sum(
-            item.get('auction_fee', 0) + item['vehicle_price'] +
-            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
-            item.get('service_fee', 0)
-            for item in items_data
-        )
+        total_amount = sum(self._calculate_item_total(item) for item in items_data)
 
         # Update order
         with transaction.atomic():
@@ -393,14 +413,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     order=order,
                     car=car,
                     car_category=category,
-                    venue=item_data.get('venue', ''),
-                    year_type=item_data.get('year_type', ''),
-                    auction_fee=item_data.get('auction_fee', 0),
-                    vehicle_price=item_data['vehicle_price'],
-                    recycling_fee=item_data.get('recycling_fee', 0),
-                    automobile_tax=item_data.get('automobile_tax', 0),
-                    service_fee=item_data.get('service_fee', 0),
-                    notes=item_data.get('notes', '')
+                    **self._build_order_item_payload(item_data)
                 )
 
         return Response(OrderSerializer(order).data)
@@ -490,12 +503,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order_number = f'ORD-{date_str}-{new_num:03d}'
 
         # Calculate total_amount
-        total_amount = sum(
-            item.get('auction_fee', 0) + item['vehicle_price'] +
-            item.get('recycling_fee', 0) + item.get('automobile_tax', 0) +
-            item.get('service_fee', 0)
-            for item in items_data
-        )
+        total_amount = sum(self._calculate_item_total(item) for item in items_data)
 
         # Create order
         with transaction.atomic():
@@ -527,24 +535,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                     year=item_data['year']
                 )
 
-                subtotal = (
-                    item_data.get('auction_fee', 0) + item_data['vehicle_price'] +
-                    item_data.get('recycling_fee', 0) + item_data.get('automobile_tax', 0) +
-                    item_data.get('service_fee', 0)
-                )
-
                 OrderItem.objects.create(
                     order=order,
                     car=car,
                     car_category=category,
-                    venue=item_data.get('venue', ''),
-                    year_type=item_data.get('year_type', ''),
-                    auction_fee=item_data.get('auction_fee', 0),
-                    vehicle_price=item_data['vehicle_price'],
-                    recycling_fee=item_data.get('recycling_fee', 0),
-                    automobile_tax=item_data.get('automobile_tax', 0),
-                    service_fee=item_data.get('service_fee', 0),
-                    notes=item_data.get('notes', '')
+                    **self._build_order_item_payload(item_data)
                 )
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
@@ -582,10 +577,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         doc = SimpleDocTemplate(
             response,
             pagesize=pagesize,
-            topMargin=20,
-            bottomMargin=20,
-            leftMargin=20,
-            rightMargin=20
+            topMargin=15,
+            bottomMargin=15,
+            leftMargin=10,
+            rightMargin=10
         )
 
         elements = []
@@ -722,6 +717,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('FONTNAME', (0, 0), (-1, -1), 'HeiseiMin-W3'),
+            ('WORDWRAP', (0, 0), (-1, -1), True),
         ]))
         
         return section_table
@@ -736,14 +732,20 @@ class OrderViewSet(viewsets.ModelViewSet):
             data.append(f"取引ID: {order.transaction.transaction_id or order.transaction.description}")
         
         grand_total = sum(item.subtotal for item in order.items.all())
+        total_tax = sum(
+            item.vehicle_price_tax + item.listing_fee_tax + item.successful_bid_tax + 
+            item.commission_fee_tax + item.transport_fee_tax + item.registration_fee_tax 
+            for item in order.items.all()
+        )
         total_style = ParagraphStyle(
             'TotalAmount',
             parent=styles['Normal'],
             fontSize=14,
             fontName='HeiseiMin-W3',
-            textColor=colors.black
+            textColor=colors.black,
+            wordWrap='CJK'
         )
-        total_para = Paragraph(f"<b>合計金額 ¥ {grand_total:,.0f}</b>", total_style)
+        total_para = Paragraph(f"合計金額 ¥ {grand_total:,.0f}", total_style)
         data.append(total_para)
         
         return data
@@ -795,81 +797,110 @@ class OrderViewSet(viewsets.ModelViewSet):
     # ======================================================
 
     def _build_auction_table(self, order, doc, styles):
-        od = order.other_details or {}
-        
         header = [
-            'NO.', '会場名', '年式', 'モデル', 'シャーシ',
-            'オークション料', '車両価格', '消費税',
-            'リサイクル料', '自動車税',
-            '落札手数料', '消費税', '合計'
-        ]
-        
-        # Add auction house column if specified
-        auction_house = od.get('auction_house', '')
-        if auction_house:
-            header.insert(1, 'オークションハウス')
+    'No.',              # NO.
+    '会場',              # Venue
+    'カテゴリー',        # Category
+    'モデル',            # Model
+    '車台番号',          # Chassis
+    '車両価格',          # Vehicle Price
+    'リサイクル料金',    # Recycle Fee
+    '出品料',            # Listing Fee
+    '落札料',            # Successful Bid
+    '手数料',            # Commission Fee
+    '輸送料',            # Transport Fee
+    '登録料',            # Registration Fee
+    'キャンセル料',      # Canceling Fee
+    '合計'               # Total
+]
 
         data = [header]
         totals = {
-            'auction_fee': 0, 'vehicle_price': 0, 'consumption_tax': 0,
-            'recycling_fee': 0, 'automobile_tax': 0, 'service_fee': 0,
-            'service_fee_tax': 0, 'subtotal': 0
+            'vehicle_price': 0, 'vehicle_price_tax': 0,
+            'recycle_fee': 0, 'listing_fee': 0, 'listing_fee_tax': 0,
+            'successful_bid': 0, 'successful_bid_tax': 0,
+            'commission_fee': 0, 'commission_fee_tax': 0,
+            'transport_fee': 0, 'transport_fee_tax': 0,
+            'registration_fee': 0, 'registration_fee_tax': 0,
+            'canceling_fee': 0, 'subtotal': 0,
         }
-
+        small_style = ParagraphStyle(
+            'SmallTable',
+            parent=styles['Normal'],
+            fontSize=6,
+            leading=7,
+            fontName='HeiseiMin-W3'
+        )
         for idx, item in enumerate(order.items.all(), 1):
             row = [
-                str(idx), item.venue or '', item.year_type or '',
-                item.car.model or '', item.car.chassis_number or '',
-                f'{item.auction_fee:,.0f}', f'{item.vehicle_price:,.0f}',
-                f'{item.consumption_tax:,.0f}', f'{item.recycling_fee:,.0f}',
-                f'{item.automobile_tax:,.0f}', f'{item.service_fee:,.0f}',
-                f'{item.service_fee_tax:,.0f}', f'{item.subtotal:,.0f}'
+                str(idx),
+                Paragraph(item.venue or '', small_style),
+                Paragraph(str(item.car_category.name) if item.car_category else '', small_style),
+                Paragraph(item.car.model or '', small_style),
+                Paragraph(item.car.chassis_number or '', small_style),
+                Paragraph(f'{item.vehicle_price:,.0f}<br/>{item.vehicle_price_tax:,.0f}', small_style),
+                Paragraph(f'{item.recycle_fee:,.0f}', small_style),
+                Paragraph(f'{item.listing_fee:,.0f}<br/>{item.listing_fee_tax:,.0f}', small_style),
+                Paragraph(f'{item.successful_bid:,.0f}<br/>{item.successful_bid_tax:,.0f}', small_style),
+                Paragraph(f'{item.commission_fee:,.0f}<br/>{item.commission_fee_tax:,.0f}', small_style),
+                Paragraph(f'{item.transport_fee:,.0f}<br/>{item.transport_fee_tax:,.0f}', small_style),
+                Paragraph(f'{item.registration_fee:,.0f}<br/>{item.registration_fee_tax:,.0f}', small_style),
+                Paragraph(f'{item.canceling_fee:,.0f}', small_style),
+                Paragraph(f'{item.subtotal:,.0f}', small_style),
             ]
-            
-            if auction_house:
-                row.insert(1, auction_house)
-            
             data.append(row)
-            for key in totals:
-                totals[key] += getattr(item, key)
 
-        # Total row
-        total_row = [
+            totals['vehicle_price'] += item.vehicle_price
+            totals['vehicle_price_tax'] += item.vehicle_price_tax
+            totals['recycle_fee'] += item.recycle_fee
+            totals['listing_fee'] += item.listing_fee
+            totals['listing_fee_tax'] += item.listing_fee_tax
+            totals['successful_bid'] += item.successful_bid
+            totals['successful_bid_tax'] += item.successful_bid_tax
+            totals['commission_fee'] += item.commission_fee
+            totals['commission_fee_tax'] += item.commission_fee_tax
+            totals['transport_fee'] += item.transport_fee
+            totals['transport_fee_tax'] += item.transport_fee_tax
+            totals['registration_fee'] += item.registration_fee
+            totals['registration_fee_tax'] += item.registration_fee_tax
+            totals['canceling_fee'] += item.canceling_fee
+            totals['subtotal'] += item.subtotal
+
+        data.append([
             '', '', '', '', '合計',
-            f'{totals["auction_fee"]:,.0f}', f'{totals["vehicle_price"]:,.0f}',
-            f'{totals["consumption_tax"]:,.0f}', f'{totals["recycling_fee"]:,.0f}',
-            f'{totals["automobile_tax"]:,.0f}', f'{totals["service_fee"]:,.0f}',
-            f'{totals["service_fee_tax"]:,.0f}', f'{totals["subtotal"]:,.0f}'
-        ]
-        
-        if auction_house:
-            total_row.insert(1, '')
-            
-        data.append(total_row)
-
-        col_widths = [20, 50, 35, 70, 90, 55, 65, 50, 50, 45, 50, 50, 70] if auction_house else [25, 60, 40, 80, 100, 65, 75, 60, 60, 55, 60, 60, 80]
+            Paragraph(f'{totals["vehicle_price"]:,.0f}<br/>{totals["vehicle_price_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["recycle_fee"]:,.0f}', small_style),
+            Paragraph(f'{totals["listing_fee"]:,.0f}<br/>{totals["listing_fee_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["successful_bid"]:,.0f}<br/>{totals["successful_bid_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["commission_fee"]:,.0f}<br/>{totals["commission_fee_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["transport_fee"]:,.0f}<br/>{totals["transport_fee_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["registration_fee"]:,.0f}<br/>{totals["registration_fee_tax"]:,.0f}', small_style),
+            Paragraph(f'{totals["canceling_fee"]:,.0f}', small_style),
+            Paragraph(f'{totals["subtotal"]:,.0f}', small_style),
+        ])
+        total_width = doc.width
+        col_count = len(header)
+        col_widths = [total_width / col_count] * col_count
+        col_widths = [18, 36, 40, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
         table = Table(data, colWidths=col_widths, repeatRows=1)
-
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.black),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'HeiseiMin-W3'),
-            ('FONTSIZE', (0, 0), (-1, 0), 7),
+            ('FONTSIZE', (0, 0), (-1, 0), 5),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (0, 1), (4, -2), 'CENTER'),
             ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('FONTSIZE', (0, 1), (-1, -1), 4),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('FONTNAME', (0, -1), (-1, -1), 'HeiseiMin-W3'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
         ]))
 
         return table
-
-
-    # ======================================================
-    # STANDARD (SALE / PURCHASE) TABLE
-    # ======================================================
 
     def _build_standard_table(self, order, doc, styles):
         header = ['NO.', '車種', 'モデル', 'シャーシ', '年式', '価格', '消費税', '合計']
