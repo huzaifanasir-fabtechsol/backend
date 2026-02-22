@@ -63,6 +63,19 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    @action(detail=False, methods=['get'])
+    def search_titles(self, request):
+        query = request.query_params.get('q', '').strip()
+        if not query:
+            return Response([])
+        
+        titles = Expense.objects.filter(
+            user=request.user,
+            title__icontains=query
+        ).values_list('title', flat=True).distinct()[:10]
+        
+        return Response(list(titles))
+
     def _add_watermark(self, canvas, doc, text="INVOICE"):
             canvas.saveState()
             canvas.setFont("HeiseiMin-W3", 80)
