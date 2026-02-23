@@ -1,7 +1,12 @@
-﻿from rest_framework import viewsets
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+from openpyxl import load_workbook
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db import transaction as db_transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from reportlab.lib.pagesizes import A4
@@ -13,7 +18,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase import pdfmetrics
 from apps.expense.models import Expense, ExpenseCategory, Restaurant, SparePart
 from apps.expense.serializers import ExpenseSerializer, ExpenseCategorySerializer, RestaurantSerializer, SparePartSerializer
-from apps.revenue.models import Transaction
+from apps.revenue.models import CompanyAccount, Transaction
 from apps.revenue.serializers import TransactionSerializer
 from apps.account.models import User
 
@@ -26,7 +31,9 @@ class ExpenseCategoryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-    
+
+
+
     @action(detail=False, methods=['get'])
     def all(self, request):
         queryset = self.get_queryset()
@@ -62,6 +69,44 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+    def _parse_excel_date(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+
+        for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%m/%d/%Y', '%Y%m%d'):
+            try:
+                return datetime.strptime(value_str, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def _parse_excel_amount(self, value):
+        if value is None:
+            return None
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+
+        cleaned = value_str.replace(',', '').replace('\u00a5', '').replace('$', '')
+        cleaned = cleaned.replace('(', '-').replace(')', '')
+        try:
+            amount = Decimal(cleaned)
+        except (InvalidOperation, TypeError):
+            return None
+
+        if amount < 0:
+            amount = -amount
+        return amount
 
     @action(detail=False, methods=['get'])
     def search_titles(self, request):
@@ -367,6 +412,128 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         serializer = TransactionSerializer(queryset, many=True)
         return Response(serializer.data)
+
+
+    @action(detail=False, methods=['post'], url_path='bulk-import-xls-expenses')
+    def bulk_import_xls_expenses(self, request):
+        excel_file = request.FILES.get('file')
+        if not excel_file:
+            return Response({'error': 'file is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        category = ExpenseCategory.objects.filter(id=17, user=request.user).first()
+        if not category:
+            return Response({'error': 'Expense category 17 not found for this user'}, status=status.HTTP_400_BAD_REQUEST)
+
+        account_id = request.data.get('company_account_id')
+        company_account = None
+        if account_id:
+            company_account = CompanyAccount.objects.filter(id=account_id, user=request.user).first()
+            if not company_account:
+                return Response({'error': 'company_account_id is invalid'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            workbook = load_workbook(excel_file, data_only=True)
+        except Exception as exc:
+            return Response(
+                {'error': f'Unable to read Excel file. Upload a valid .xlsx file. {str(exc)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        sheet = workbook.active
+        rows = list(sheet.iter_rows(values_only=True))
+        if len(rows) <= 1:
+            return Response({'error': 'Excel file has no data rows'}, status=status.HTTP_400_BAD_REQUEST)
+
+        default_account = company_account or CompanyAccount.objects.filter(user=request.user).order_by('id').first()
+        missing_account_needed = False
+        created_transactions = 0
+        reused_transactions = 0
+        created_expenses = 0
+        skipped_rows = 0
+        row_errors = []
+
+        with db_transaction.atomic():
+            for row_index, row in enumerate(rows[1:], start=2):
+                row_values = list(row or [])
+                if len(row_values) < 3:
+                    skipped_rows += 1
+                    row_errors.append(f'Row {row_index}: expected at least 3 columns')
+                    continue
+
+                tx_id_raw = row_values[-1]
+                tx_id = str(tx_id_raw).strip() if tx_id_raw is not None else ''
+                tx_id = tx_id[:500]
+                if not tx_id:
+                    skipped_rows += 1
+                    row_errors.append(f'Row {row_index}: transaction id is empty')
+                    continue
+
+                parsed_date = self._parse_excel_date(row_values[0])
+                if not parsed_date:
+                    skipped_rows += 1
+                    row_errors.append(f'Row {row_index}: invalid date "{row_values[0]}"')
+                    continue
+
+                amount = self._parse_excel_amount(row_values[1])
+                if amount is None:
+                    skipped_rows += 1
+                    row_errors.append(f'Row {row_index}: invalid amount "{row_values[1]}"')
+                    continue
+
+                existing_tx = Transaction.objects.filter(
+                    user=request.user,
+                    transaction_id=tx_id
+                ).order_by('id').first()
+
+                if existing_tx:
+                    tx = existing_tx
+                    reused_transactions += 1
+                else:
+                    if not default_account:
+                        missing_account_needed = True
+                        skipped_rows += 1
+                        row_errors.append(
+                            f'Row {row_index}: transaction "{tx_id}" not found and no company account available to create it'
+                        )
+                        continue
+
+                    tx = Transaction.objects.create(
+                        user=request.user,
+                        date=parsed_date,
+                        transaction_id=tx_id,
+                        withdraw=amount,
+                        deposit=Decimal('0'),
+                        balance=Decimal('0'),
+                        description='Imported from expense xls',
+                        notes='',
+                        company_account=default_account,
+                    )
+                    created_transactions += 1
+
+                Expense.objects.create(
+                    user=request.user,
+                    title='ETC',
+                    category=category,
+                    date=parsed_date,
+                    amount=amount,
+                    transaction=tx,
+                    description='',
+                )
+                created_expenses += 1
+
+        response_data = {
+            'message': 'Bulk import completed',
+            'created_transactions': created_transactions,
+            'reused_transactions': reused_transactions,
+            'created_expenses': created_expenses,
+            'skipped_rows': skipped_rows,
+            'errors': row_errors[:100],
+        }
+        if missing_account_needed:
+            response_data['note'] = (
+                'Provide company_account_id in the request or create a company account to allow creating new transactions.'
+            )
+        return Response(response_data, status=status.HTTP_200_OK)
 
 class RestaurantViewSet(viewsets.ModelViewSet):
     serializer_class = RestaurantSerializer
