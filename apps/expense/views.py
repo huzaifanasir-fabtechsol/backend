@@ -512,7 +512,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
                 Expense.objects.create(
                     user=request.user,
-                    title='ETC',
+                    title='Highway',
                     category=category,
                     date=parsed_date,
                     amount=amount,
