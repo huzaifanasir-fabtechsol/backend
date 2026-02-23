@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.http import HttpResponse
 from django.db.models import Sum, Q
 from datetime import datetime
@@ -172,6 +172,41 @@ class OrderViewSet(viewsets.ModelViewSet):
             'canceling_fee': to_decimal(item_data.get('canceling_fee', 0)),
         }
 
+    def _resolve_category_for_item(self, user, raw_category):
+        category_value = str(raw_category or '').strip()
+        if not category_value:
+            raise ValueError('Car name/category is required')
+
+        if category_value.isdigit():
+            category = CarCategory.objects.filter(id=int(category_value), user=user).first()
+            if category:
+                return category
+
+        category = CarCategory.objects.filter(
+            user=user
+        ).filter(
+            Q(name__iexact=category_value) | Q(company__iexact=category_value)
+        ).first()
+        if category:
+            return category
+
+        category = CarCategory.objects.filter(name=category_value, company=category_value).first()
+        if category:
+            return category
+
+        try:
+            return CarCategory.objects.create(
+                user=user,
+                name=category_value,
+                company=category_value,
+                description=''
+            )
+        except IntegrityError:
+            category = CarCategory.objects.filter(name=category_value, company=category_value).first()
+            if category:
+                return category
+            raise
+
     @action(detail=False, methods=['post'])
     def create_with_items(self, request):
         serializer = CreateOrderSerializer(data=request.data)
@@ -242,15 +277,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             'auction_house': data.pop('auction_house', '')
         }
 
-        # Check categories exist
-        category_ids = [item['category'] for item in items_data]
-        existing_categories = CarCategory.objects.filter(id__in=category_ids, user=request.user).values_list('id', flat=True)
-        missing_categories = set(category_ids) - set(existing_categories)
-        if missing_categories:
-            return Response(
-                {'error': f'Categories with IDs {list(missing_categories)} do not exist or do not belong to you'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        resolved_categories = []
+        for item_data in items_data:
+            try:
+                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category')))
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create order number
         today = datetime.now().date()
@@ -282,12 +314,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 transaction=transaction_obj
             )
 
-            for item_data in items_data:
-                category = CarCategory.objects.get(id=item_data['category'])
+            for item_data, category in zip(items_data, resolved_categories):
+                car_model = item_data.get('model') or category.name
                 car, _ = Car.objects.get_or_create(
                     user=request.user,
-                    category_id=item_data['category'],
-                    model=item_data['model'],
+                    category=category,
+                    model=car_model,
                     chassis_number=item_data['chassis_number'],
                     year=item_data['year']
                 )
@@ -365,15 +397,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             'auction_house': data.pop('auction_house', '')
         }
 
-        # Check categories exist
-        category_ids = [item['category'] for item in items_data]
-        existing_categories = CarCategory.objects.filter(id__in=category_ids, user=request.user).values_list('id', flat=True)
-        missing_categories = set(category_ids) - set(existing_categories)
-        if missing_categories:
-            return Response(
-                {'error': f'Categories with IDs {list(missing_categories)} do not exist or do not belong to you'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        resolved_categories = []
+        for item_data in items_data:
+            try:
+                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category')))
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Calculate total_amount
         total_amount = sum(self._calculate_item_total(item) for item in items_data)
@@ -399,12 +428,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             order.items.all().delete()
 
             # Create new items
-            for item_data in items_data:
-                category = CarCategory.objects.get(id=item_data['category'])
+            for item_data, category in zip(items_data, resolved_categories):
+                car_model = item_data.get('model') or category.name
                 car, _ = Car.objects.get_or_create(
                     user=request.user,
-                    category_id=item_data['category'],
-                    model=item_data['model'],
+                    category=category,
+                    model=car_model,
                     chassis_number=item_data['chassis_number'],
                     year=item_data['year']
                 )

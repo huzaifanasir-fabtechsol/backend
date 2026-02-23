@@ -34,7 +34,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['subtotal']
 
 class OrderItemCreateSerializer(serializers.Serializer):
-    category = serializers.IntegerField()
+    category = serializers.CharField(max_length=200)
     model = serializers.CharField(max_length=100)
     chassis_number = serializers.CharField(max_length=50)
     year = serializers.IntegerField()
