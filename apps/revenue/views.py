@@ -763,8 +763,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         grand_total = sum(item.subtotal for item in order.items.all())
         total_tax = sum(
-            item.vehicle_price_tax + item.listing_fee_tax + item.successful_bid_tax + 
-            item.commission_fee_tax + item.transport_fee_tax + item.registration_fee_tax 
+            item.vehicle_price_tax + item.listing_fee_tax - item.successful_bid_tax - 
+            item.commission_fee_tax - item.transport_fee_tax - item.registration_fee_tax 
             for item in order.items.all()
         )
         total_style = ParagraphStyle(

@@ -21,6 +21,7 @@ from apps.expense.serializers import ExpenseSerializer, ExpenseCategorySerialize
 from apps.revenue.models import CompanyAccount, Transaction
 from apps.revenue.serializers import TransactionSerializer
 from apps.account.models import User
+from project.pagination import CustomPageNumberPagination
 
 class ExpenseCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseCategorySerializer
@@ -538,6 +539,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 class RestaurantViewSet(viewsets.ModelViewSet):
     serializer_class = RestaurantSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = Restaurant.objects.filter(user=self.request.user)
@@ -556,6 +558,7 @@ class RestaurantViewSet(viewsets.ModelViewSet):
 class SparePartViewSet(viewsets.ModelViewSet):
     serializer_class = SparePartSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = SparePart.objects.filter(user=self.request.user)
