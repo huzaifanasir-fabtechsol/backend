@@ -17,6 +17,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 from apps.revenue.models import Car, CarCategory, Order, OrderItem, Customer, Saler, CompanyAccount, Auction, Transaction
 from apps.revenue.serializers import CarSerializer, CarCategorySerializer, OrderSerializer, OrderItemSerializer, CreateOrderSerializer, CustomerSerializer, SalerSerializer, CompanyAccountSerializer, AuctionSerializer, TransactionSerializer
+from project.pagination import CustomPageNumberPagination
 from apps.expense.models import Expense
 from django.conf import settings
 from apps.account.models import User
@@ -136,12 +137,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             item.get('recycle_fee', 0) +
             item.get('listing_fee', 0) +
             item.get('listing_fee_tax', 0) +
-            item.get('successful_bid', 0) +
-            item.get('successful_bid_tax', 0) +
-            item.get('commission_fee', 0) +
-            item.get('commission_fee_tax', 0) +
-            item.get('transport_fee', 0) +
-            item.get('transport_fee_tax', 0) +
+            item.get('successful_bid', 0) -
+            item.get('successful_bid_tax', 0) -
+            item.get('commission_fee', 0) -
+            item.get('commission_fee_tax', 0) -
+            item.get('transport_fee', 0) -
+            item.get('transport_fee_tax', 0) -
             item.get('registration_fee', 0) +
             item.get('registration_fee_tax', 0) +
             item.get('canceling_fee', 0)
@@ -884,14 +885,14 @@ class OrderViewSet(viewsets.ModelViewSet):
             totals['recycle_fee'] += item.recycle_fee
             totals['listing_fee'] += item.listing_fee
             totals['listing_fee_tax'] += item.listing_fee_tax
-            totals['successful_bid'] += item.successful_bid
-            totals['successful_bid_tax'] += item.successful_bid_tax
-            totals['commission_fee'] += item.commission_fee
-            totals['commission_fee_tax'] += item.commission_fee_tax
-            totals['transport_fee'] += item.transport_fee
-            totals['transport_fee_tax'] += item.transport_fee_tax
-            totals['registration_fee'] += item.registration_fee
-            totals['registration_fee_tax'] += item.registration_fee_tax
+            totals['successful_bid'] -= item.successful_bid
+            totals['successful_bid_tax'] -= item.successful_bid_tax
+            totals['commission_fee'] -= item.commission_fee
+            totals['commission_fee_tax'] -= item.commission_fee_tax
+            totals['transport_fee'] -= item.transport_fee
+            totals['transport_fee_tax'] -= item.transport_fee_tax
+            totals['registration_fee'] -= item.registration_fee
+            totals['registration_fee_tax'] -= item.registration_fee_tax
             totals['canceling_fee'] += item.canceling_fee
             totals['subtotal'] += item.subtotal
 
@@ -1158,6 +1159,7 @@ class OrderItemViewSet(viewsets.ModelViewSet):
 class CustomerViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = Customer.objects.filter(user=self.request.user)
@@ -1176,6 +1178,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 class SalerViewSet(viewsets.ModelViewSet):
     serializer_class = SalerSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = Saler.objects.filter(user=self.request.user)
@@ -1194,6 +1197,7 @@ class SalerViewSet(viewsets.ModelViewSet):
 class CompanyAccountViewSet(viewsets.ModelViewSet):
     serializer_class = CompanyAccountSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = CompanyAccount.objects.filter(user=self.request.user)
@@ -1211,6 +1215,7 @@ class CompanyAccountViewSet(viewsets.ModelViewSet):
 class AuctionViewSet(viewsets.ModelViewSet):
     serializer_class = AuctionSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = Auction.objects.filter(user=self.request.user)
@@ -1228,6 +1233,7 @@ class AuctionViewSet(viewsets.ModelViewSet):
 class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         queryset = Transaction.objects.filter(user=self.request.user).order_by('-date', '-id')
