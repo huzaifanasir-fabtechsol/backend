@@ -55,6 +55,7 @@ class CarCategoryViewSet(viewsets.ModelViewSet):
 class CarViewSet(viewsets.ModelViewSet):
     serializer_class = CarSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
         return Car.objects.filter(user=self.request.user)
@@ -63,8 +64,11 @@ class CarViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
     
     def list(self, request, *args, **kwargs):
-        # Return all cars without pagination
-        queryset = self.get_queryset()
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -137,15 +141,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             item.get('recycle_fee', 0) +
             item.get('listing_fee', 0) +
             item.get('listing_fee_tax', 0) +
+            item.get('canceling_fee', 0) -
             item.get('successful_bid', 0) -
             item.get('successful_bid_tax', 0) -
             item.get('commission_fee', 0) -
             item.get('commission_fee_tax', 0) -
             item.get('transport_fee', 0) -
             item.get('transport_fee_tax', 0) -
-            item.get('registration_fee', 0) +
-            item.get('registration_fee_tax', 0) +
-            item.get('canceling_fee', 0)
+            item.get('registration_fee', 0) -
+            item.get('registration_fee_tax', 0)
         )
 
     def _build_order_item_payload(self, item_data):

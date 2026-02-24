@@ -131,11 +131,11 @@ class OrderItem(BaseModel):
             self.vehicle_price + self.vehicle_price_tax +
             self.recycle_fee +
             self.listing_fee + self.listing_fee_tax +
-            self.successful_bid + self.successful_bid_tax +
-            self.commission_fee + self.commission_fee_tax +
-            self.transport_fee + self.transport_fee_tax +
-            self.registration_fee + self.registration_fee_tax +
-            self.canceling_fee
+            self.canceling_fee -
+            self.successful_bid - self.successful_bid_tax -
+            self.commission_fee - self.commission_fee_tax -
+            self.transport_fee - self.transport_fee_tax -
+            self.registration_fee - self.registration_fee_tax
         )
         
         super().save(*args, **kwargs)
