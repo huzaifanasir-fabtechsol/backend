@@ -288,6 +288,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category')))
             except ValueError as exc:
                 return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        for item_data, category in zip(items_data, resolved_categories):
+                car_model = item_data.get('model') or category.name
+                car_e = Car.objects.filter(chassis_number=item_data['chassis_number']).first()
+                if car_e:
+                    return Response({'error': f"Car with chassis number {item_data['chassis_number']} already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
         # Create order number
         today = datetime.now().date()
@@ -321,7 +326,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             for item_data, category in zip(items_data, resolved_categories):
                 car_model = item_data.get('model') or category.name
-                car, _ = Car.objects.get_or_create(
+                car= Car.objects.create(
                     user=request.user,
                     category=category,
                     model=car_model,
