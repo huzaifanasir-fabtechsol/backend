@@ -139,9 +139,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             item.get('vehicle_price', 0) +
             item.get('vehicle_price_tax', 0) +
             item.get('recycle_fee', 0) +
-            item.get('listing_fee', 0) +
-            item.get('listing_fee_tax', 0) +
             item.get('canceling_fee', 0) -
+            item.get('listing_fee', 0) -
+            item.get('listing_fee_tax', 0) -
             item.get('successful_bid', 0) -
             item.get('successful_bid_tax', 0) -
             item.get('commission_fee', 0) -
@@ -772,7 +772,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         grand_total = sum(item.subtotal for item in order.items.all())
         total_tax = sum(
-            item.vehicle_price_tax + item.listing_fee_tax - item.successful_bid_tax - 
+            item.vehicle_price_tax - item.listing_fee_tax - item.successful_bid_tax - 
             item.commission_fee_tax - item.transport_fee_tax - item.registration_fee_tax 
             for item in order.items.all()
         )
@@ -894,14 +894,14 @@ class OrderViewSet(viewsets.ModelViewSet):
             totals['recycle_fee'] += item.recycle_fee
             totals['listing_fee'] += item.listing_fee
             totals['listing_fee_tax'] += item.listing_fee_tax
-            totals['successful_bid'] -= item.successful_bid
-            totals['successful_bid_tax'] -= item.successful_bid_tax
-            totals['commission_fee'] -= item.commission_fee
-            totals['commission_fee_tax'] -= item.commission_fee_tax
-            totals['transport_fee'] -= item.transport_fee
-            totals['transport_fee_tax'] -= item.transport_fee_tax
-            totals['registration_fee'] -= item.registration_fee
-            totals['registration_fee_tax'] -= item.registration_fee_tax
+            totals['successful_bid'] += item.successful_bid
+            totals['successful_bid_tax'] += item.successful_bid_tax
+            totals['commission_fee'] += item.commission_fee
+            totals['commission_fee_tax'] += item.commission_fee_tax
+            totals['transport_fee'] += item.transport_fee
+            totals['transport_fee_tax'] += item.transport_fee_tax
+            totals['registration_fee'] += item.registration_fee
+            totals['registration_fee_tax'] += item.registration_fee_tax
             totals['canceling_fee'] += item.canceling_fee
             totals['subtotal'] += item.subtotal
 
