@@ -903,7 +903,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 Paragraph(item.venue or '', small_style),
                 Paragraph(str(item.car_category.name) if item.car_category else '', small_style),
                 Paragraph(item.car.model or '', small_style),
-                Paragraph(item.car.year or '', small_style),
+                Paragraph(str(item.car.year) or '', small_style),
                 Paragraph(item.car.chassis_number or '', small_style),
                 Paragraph(f'{item.vehicle_price:,.0f}<br/>{item.vehicle_price_tax:,.0f}', small_style),
                 Paragraph(f'{item.recycle_fee:,.0f}', small_style),
