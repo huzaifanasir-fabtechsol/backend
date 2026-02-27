@@ -696,6 +696,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                 height=logo_height,
                 mask='auto'
             )
+
+        canvas.saveState()
+        canvas.setFont("HeiseiMin-W3", 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawCentredString(
+            doc.pagesize[0] / 2,
+            12,
+            "コンピュータで生成された請求書です。"
+        )
+        canvas.restoreState()
     
     # ======================================================
     # HEADER SECTION WITH COMPANY AND INVOICE INFO
@@ -933,10 +943,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             Paragraph(f'{totals["canceling_fee"]:,.0f}', small_style),
             Paragraph(f'{totals["subtotal"]:,.0f}', small_style),
         ])
-        total_width = doc.width
-        col_count = len(header)
-        col_widths = [total_width / col_count] * col_count
-        col_widths = [18, 36, 40, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
+        base_col_widths = [18, 36, 40, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
+        base_total = sum(base_col_widths)
+        target_width = doc.width * 0.99
+        scale = target_width / base_total if base_total else 1
+        col_widths = [w * scale for w in base_col_widths]
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.black),
