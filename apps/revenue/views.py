@@ -867,6 +867,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     '会場',              # Venue
     'カテゴリー',        # Category
     'モデル',            # Model
+    '年',            # Year
     '車台番号',          # Chassis
     '車両価格',          # Vehicle Price
     'リサイクル料金',    # Recycle Fee
@@ -902,6 +903,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 Paragraph(item.venue or '', small_style),
                 Paragraph(str(item.car_category.name) if item.car_category else '', small_style),
                 Paragraph(item.car.model or '', small_style),
+                Paragraph(item.car.year or '', small_style),
                 Paragraph(item.car.chassis_number or '', small_style),
                 Paragraph(f'{item.vehicle_price:,.0f}<br/>{item.vehicle_price_tax:,.0f}', small_style),
                 Paragraph(f'{item.recycle_fee:,.0f}', small_style),
@@ -943,7 +945,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             Paragraph(f'{totals["canceling_fee"]:,.0f}', small_style),
             Paragraph(f'{totals["subtotal"]:,.0f}', small_style),
         ])
-        base_col_widths = [18, 36, 40, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
+        base_col_widths = [18, 36, 40, 42, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
         base_total = sum(base_col_widths)
         target_width = doc.width * 0.99
         scale = target_width / base_total if base_total else 1
