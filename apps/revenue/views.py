@@ -779,12 +779,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         if order.transaction:
             data.append(f"取引ID: {order.transaction.transaction_id or order.transaction.description}")
         
+        # Payment status
+        status_map = {'pending': '保留中', 'completed': '完了', 'failed': '失敗'}
+        payment_status = status_map.get(order.payment_status, order.payment_status)
+        data.append(f"支払状況: {payment_status}")
+        
         grand_total = sum(item.subtotal for item in order.items.all())
-        total_tax = sum(
-            item.vehicle_price_tax - item.listing_fee_tax - item.successful_bid_tax - 
-            item.commission_fee_tax - item.transport_fee_tax - item.registration_fee_tax 
-            for item in order.items.all()
-        )
         total_style = ParagraphStyle(
             'TotalAmount',
             parent=styles['Normal'],
@@ -799,8 +799,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         return data
     
     def _get_company_bank_info(self, order):
+        od = order.other_details or {}
+        payment_method = od.get('payment_method', 'Cash')
+        
         data = []
-        if order.company_account:
+        method = '銀行' if payment_method == 'Bank' else '現金'
+        data.append(f"支払方法: {method}")
+        if payment_method == 'Bank' and order.company_account:
             data.append(f"銀行: {order.company_account.bank_name}")
             data.append(f"普通: {order.company_account.account_number}")
             if order.company_account.branch_code:
@@ -810,12 +815,13 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     def _get_customer_info(self, order):
         od = order.other_details or {}
+        payment_method = od.get('payment_method', 'Cash')
         data = []
         
         if order.customer:
             data.append(f"顧客の住所: {order.customer.address}" or "")
             data.append(f"顧客名: {order.customer.name}" or "")
-            if hasattr(order.customer, 'bank_name') and order.customer.bank_name:
+            if payment_method == 'Bank' and hasattr(order.customer, 'bank_name') and order.customer.bank_name:
                 data.append(f"銀行: {order.customer.bank_name}")
                 data.append(f"口座: {order.customer.account_number}")
         else:
@@ -826,12 +832,13 @@ class OrderViewSet(viewsets.ModelViewSet):
     
     def _get_saler_info(self, order):
         od = order.other_details or {}
+        payment_method = od.get('payment_method', 'Cash')
         data = []
         
         if order.saler:
             data.append(f"販売者の住所: {order.saler.address}" or "")
             data.append(f"販売者名: {order.saler.name}" or "")
-            if hasattr(order.saler, 'bank_name') and order.saler.bank_name:
+            if payment_method == 'Bank' and hasattr(order.saler, 'bank_name') and order.saler.bank_name:
                 data.append(f"銀行: {order.saler.bank_name}")
                 data.append(f"口座: {order.saler.account_number}")
         else:
