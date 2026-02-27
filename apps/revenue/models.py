@@ -35,6 +35,7 @@ class Order(BaseModel):
         ('purchase', 'Purchase'),
         ('sale', 'Sale'),
         ('auction', 'Auction'),
+        ('nagare', 'Nagare'),
     ]
     
     TRANSACTION_CATAGORY = [
@@ -126,17 +127,35 @@ class OrderItem(BaseModel):
         return f"{self.order.order_number} - {self.car.category}"
     
     def save(self, *args, **kwargs):
-        # Calculate subtotal using the current fee structure.
-        self.subtotal = (
-            self.vehicle_price + self.vehicle_price_tax +
-            self.recycle_fee +
-            self.listing_fee + self.listing_fee_tax +
-            self.canceling_fee -
-            self.successful_bid - self.successful_bid_tax -
-            self.commission_fee - self.commission_fee_tax -
-            self.transport_fee - self.transport_fee_tax -
-            self.registration_fee - self.registration_fee_tax
-        )
+        # Calculate subtotal based on transaction type
+        order_type = self.order.transaction_type if hasattr(self, 'order') and self.order else 'sale'
+        
+        if order_type == 'nagare':
+            # NAGARE: Plus vehicle price, tax, recycle, listing fee, listing tax, canceling
+            # Minus successful bid, commission, transport, registration (and their taxes)
+            self.subtotal = (
+                self.vehicle_price + self.vehicle_price_tax +
+                self.recycle_fee +
+                self.listing_fee + self.listing_fee_tax +
+                self.canceling_fee -
+                self.successful_bid - self.successful_bid_tax -
+                self.commission_fee - self.commission_fee_tax -
+                self.transport_fee - self.transport_fee_tax -
+                self.registration_fee - self.registration_fee_tax
+            )
+        else:
+            # SALE/PURCHASE: Plus vehicle price, tax, recycle, canceling
+            # Minus listing fee, successful bid, commission, transport, registration (and their taxes)
+            self.subtotal = (
+                self.vehicle_price + self.vehicle_price_tax +
+                self.recycle_fee +
+                self.canceling_fee -
+                self.listing_fee - self.listing_fee_tax -
+                self.successful_bid - self.successful_bid_tax -
+                self.commission_fee - self.commission_fee_tax -
+                self.transport_fee - self.transport_fee_tax -
+                self.registration_fee - self.registration_fee_tax
+            )
         
         super().save(*args, **kwargs)
 

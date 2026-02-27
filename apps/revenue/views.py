@@ -135,22 +135,42 @@ class OrderViewSet(viewsets.ModelViewSet):
         })
 
     def _calculate_item_total(self, item):
-        return (
-            item.get('vehicle_price', 0) +
-            item.get('vehicle_price_tax', 0) +
-            item.get('recycle_fee', 0) +
-            item.get('canceling_fee', 0) -
-            item.get('listing_fee', 0) -
-            item.get('listing_fee_tax', 0) -
-            item.get('successful_bid', 0) -
-            item.get('successful_bid_tax', 0) -
-            item.get('commission_fee', 0) -
-            item.get('commission_fee_tax', 0) -
-            item.get('transport_fee', 0) -
-            item.get('transport_fee_tax', 0) -
-            item.get('registration_fee', 0) -
-            item.get('registration_fee_tax', 0)
-        )
+        order_type = self.request.data.get('transaction_type', 'sale')
+        
+        if order_type == 'nagare':
+            return (
+                item.get('vehicle_price', 0) +
+                item.get('vehicle_price_tax', 0) +
+                item.get('recycle_fee', 0) +
+                item.get('listing_fee', 0) +
+                item.get('listing_fee_tax', 0) +
+                item.get('canceling_fee', 0) -
+                item.get('successful_bid', 0) -
+                item.get('successful_bid_tax', 0) -
+                item.get('commission_fee', 0) -
+                item.get('commission_fee_tax', 0) -
+                item.get('transport_fee', 0) -
+                item.get('transport_fee_tax', 0) -
+                item.get('registration_fee', 0) -
+                item.get('registration_fee_tax', 0)
+            )
+        else:
+            return (
+                item.get('vehicle_price', 0) +
+                item.get('vehicle_price_tax', 0) +
+                item.get('recycle_fee', 0) +
+                item.get('canceling_fee', 0) -
+                item.get('listing_fee', 0) -
+                item.get('listing_fee_tax', 0) -
+                item.get('successful_bid', 0) -
+                item.get('successful_bid_tax', 0) -
+                item.get('commission_fee', 0) -
+                item.get('commission_fee_tax', 0) -
+                item.get('transport_fee', 0) -
+                item.get('transport_fee_tax', 0) -
+                item.get('registration_fee', 0) -
+                item.get('registration_fee_tax', 0)
+            )
 
     def _build_order_item_payload(self, item_data):
         def to_decimal(value):
@@ -225,7 +245,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         auction_id = data.pop('auction_id', None)
         transaction_id = data.pop('transaction', None)
 
-        # Validate foreign keys
         customer = None
         if customer_id:
             try:
@@ -265,10 +284,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Customer is required for sale orders'}, status=status.HTTP_400_BAD_REQUEST)
         if data['transaction_type'] == 'purchase' and not saler:
             return Response({'error': 'Saler is required for purchase orders'}, status=status.HTTP_400_BAD_REQUEST)
-        if data['transaction_type'] == 'auction' and not customer:
-            return Response({'error': 'Customer is required for auction orders'}, status=status.HTTP_400_BAD_REQUEST)
+        if data['transaction_type'] in ['auction', 'nagare'] and not customer:
+            return Response({'error': 'Customer is required for auction/nagare orders'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Move all extra fields into other_details
         other_details = {
             'customer_name': data.pop('customer_name', ''),
             'saler_name': data.pop('saler_name', ''),
@@ -294,30 +312,27 @@ class OrderViewSet(viewsets.ModelViewSet):
                 if car_e:
                     return Response({'error': f"Car with chassis number {item_data['chassis_number']} already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create order number
         today = datetime.now().date()
         date_str = today.strftime('%Y%m%d')
         last_order = Order.objects.filter(order_number__startswith=f'ORD-{date_str}').order_by('-order_number').first()
         new_num = int(last_order.order_number.split('-')[-1]) + 1 if last_order else 1
         order_number = f'ORD-{date_str}-{new_num:03d}'
 
-        # Calculate total_amount
         total_amount = sum(self._calculate_item_total(item) for item in items_data)
 
-        # Create order
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user,
                 order_number=order_number,
                 total_amount=total_amount,
-                customer_name=other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction'] else other_details.get('saler_name', ''),
+                customer_name=other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction', 'nagare'] else other_details.get('saler_name', ''),
                 other_details=other_details,
                 transaction_type=data['transaction_type'],
                 transaction_catagory=data['transaction_catagory'],
                 transaction_date=data['transaction_date'],
                 payment_status=data['payment_status'],
                 notes=data.get('notes', ''),
-                customer=customer if data['transaction_type'] in ['sale', 'auction'] else None,
+                customer=customer if data['transaction_type'] in ['sale', 'auction', 'nagare'] else None,
                 saler=saler if data['transaction_type'] == 'purchase' else None,
                 company_account=company_account,
                 auction=auction,
@@ -357,7 +372,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         auction_id = data.pop('auction_id', None)
         transaction_id = data.pop('transaction', None)
 
-        # Validate foreign keys
         customer = None
         if customer_id:
             try:
@@ -393,7 +407,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             except Transaction.DoesNotExist:
                 return Response({'error': 'Transaction not found'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Move all extra fields into other_details
         other_details = {
             'customer_name': data.pop('customer_name', ''),
             'saler_name': data.pop('saler_name', ''),
@@ -414,30 +427,26 @@ class OrderViewSet(viewsets.ModelViewSet):
             except ValueError as exc:
                 return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate total_amount
         total_amount = sum(self._calculate_item_total(item) for item in items_data)
 
-        # Update order
         with transaction.atomic():
             order.total_amount = total_amount
-            order.customer_name = other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction'] else other_details.get('saler_name', '')
+            order.customer_name = other_details.get('customer_name') if data['transaction_type'] in ['sale', 'auction', 'nagare'] else other_details.get('saler_name', '')
             order.other_details = other_details
             order.transaction_type = data['transaction_type']
             order.transaction_catagory = data['transaction_catagory']
             order.transaction_date = data['transaction_date']
             order.payment_status = data['payment_status']
             order.notes = data.get('notes', '')
-            order.customer = customer if data['transaction_type'] in ['sale', 'auction'] else None
+            order.customer = customer if data['transaction_type'] in ['sale', 'auction', 'nagare'] else None
             order.saler = saler if data['transaction_type'] == 'purchase' else None
             order.company_account = company_account
             order.auction = auction
             order.transaction = transaction_obj
             order.save()
 
-            # Delete existing items
             order.items.all().delete()
 
-            # Create new items
             for item_data, category in zip(items_data, resolved_categories):
                 car_model = item_data.get('model') or category.name
                 car, _ = Car.objects.get_or_create(

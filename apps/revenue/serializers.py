@@ -86,7 +86,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
 # ----------------- Create Order -----------------
 class CreateOrderSerializer(serializers.Serializer):
-    transaction_type = serializers.ChoiceField(choices=['purchase', 'sale', 'auction'])
+    transaction_type = serializers.ChoiceField(choices=['purchase', 'sale', 'auction', 'nagare'])
     transaction_catagory = serializers.ChoiceField(choices=['local', 'foreign'])
     payment_status = serializers.ChoiceField(choices=['pending', 'completed', 'failed'])
     transaction_date = serializers.DateField()
