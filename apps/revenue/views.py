@@ -284,8 +284,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Customer is required for sale orders'}, status=status.HTTP_400_BAD_REQUEST)
         if data['transaction_type'] == 'purchase' and not saler:
             return Response({'error': 'Saler is required for purchase orders'}, status=status.HTTP_400_BAD_REQUEST)
-        if data['transaction_type'] in ['auction', 'nagare'] and not customer:
-            return Response({'error': 'Customer is required for auction/nagare orders'}, status=status.HTTP_400_BAD_REQUEST)
+        if data['transaction_type'] == 'auction' and not customer:
+            return Response({'error': 'Customer is required for auction orders'}, status=status.HTTP_400_BAD_REQUEST)
 
         other_details = {
             'customer_name': data.pop('customer_name', ''),
