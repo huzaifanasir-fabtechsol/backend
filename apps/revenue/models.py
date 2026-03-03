@@ -3,23 +3,22 @@ from apps.account.models import BaseModel, User
 from decimal import Decimal
 
 class CarCategory(BaseModel):
-    name = models.CharField(max_length=100, unique=True)
-    company = models.CharField(max_length=200, unique=True)
+    company = models.CharField(max_length=200)
+    model = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='car_categories')
 
     class Meta:
         db_table = 'car_categories'
         verbose_name_plural = 'Car Categories'
+        unique_together = ['company', 'model', 'user']
 
     def __str__(self):
-        return self.name
+        return f"{self.company} - {self.model}"
 
 class Car(BaseModel):
     category = models.ForeignKey(CarCategory, on_delete=models.SET_NULL, null=True, related_name='cars')
-    # name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    model = models.CharField(max_length=100)
     chassis_number = models.CharField(max_length=50, unique=True)
     year = models.IntegerField()
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cars')
@@ -143,8 +142,21 @@ class OrderItem(BaseModel):
                 self.transport_fee - self.transport_fee_tax -
                 self.registration_fee - self.registration_fee_tax
             )
+        elif order_type == 'sale':
+            # SALE: Plus vehicle price, tax, recycle, transport, registration, canceling (and their taxes)
+            # Minus only listing fee, successful bid, commission fee (and their taxes)
+            self.subtotal = (
+                self.vehicle_price + self.vehicle_price_tax +
+                self.recycle_fee +
+                self.transport_fee + self.transport_fee_tax +
+                self.registration_fee + self.registration_fee_tax +
+                self.canceling_fee -
+                self.listing_fee - self.listing_fee_tax -
+                self.successful_bid - self.successful_bid_tax -
+                self.commission_fee - self.commission_fee_tax
+            )
         else:
-            # SALE/PURCHASE: Plus vehicle price, tax, recycle, canceling
+            # PURCHASE/AUCTION: Plus vehicle price, tax, recycle, canceling
             # Minus listing fee, successful bid, commission, transport, registration (and their taxes)
             self.subtotal = (
                 self.vehicle_price + self.vehicle_price_tax +

@@ -36,8 +36,8 @@ class CarCategoryViewSet(viewsets.ModelViewSet):
         
         if search:
             queryset = queryset.filter(
-                Q(name__icontains=search) |
                 Q(company__icontains=search) |
+                Q(model__icontains=search) |
                 Q(description__icontains=search)
             )
         
@@ -51,6 +51,60 @@ class CarCategoryViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file = request.FILES['file']
+        if not file.name.endswith('.xlsx'):
+            return Response({'error': 'Only .xlsx files are supported'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            wb = load_workbook(BytesIO(file.read()))
+            ws = wb.active
+            categories_created = 0
+            categories_skipped = 0
+            
+            # Get company names from first row (headers)
+            companies = []
+            for col in range(1, ws.max_column + 1):
+                company = ws.cell(row=1, column=col).value
+                if company and str(company).strip():
+                    companies.append((col, str(company).strip()))
+            
+            # Process each company column
+            for col_idx, company_name in companies:
+                # Get models from rows 2 onwards
+                for row in range(2, ws.max_row + 1):
+                    model = ws.cell(row=row, column=col_idx).value
+                    if model and str(model).strip():
+                        model_name = str(model).strip()
+                        
+                        category, created = CarCategory.objects.get_or_create(
+                            company=company_name,
+                            model=model_name,
+                            user=request.user,
+                            defaults={'description': ''}
+                        )
+                        
+                        if created:
+                            categories_created += 1
+                        else:
+                            categories_skipped += 1
+            
+            return Response({
+                'message': f'Import completed. Created: {categories_created}, Skipped: {categories_skipped}',
+                'created': categories_created,
+                'skipped': categories_skipped
+            })
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class CarViewSet(viewsets.ModelViewSet):
     serializer_class = CarSerializer
@@ -154,6 +208,23 @@ class OrderViewSet(viewsets.ModelViewSet):
                 item.get('registration_fee', 0) -
                 item.get('registration_fee_tax', 0)
             )
+        elif order_type == 'sale':
+            return (
+                item.get('vehicle_price', 0) +
+                item.get('vehicle_price_tax', 0) +
+                item.get('recycle_fee', 0) +
+                item.get('transport_fee', 0) +
+                item.get('transport_fee_tax', 0) +
+                item.get('registration_fee', 0) +
+                item.get('registration_fee_tax', 0) +
+                item.get('canceling_fee', 0) -
+                item.get('listing_fee', 0) -
+                item.get('listing_fee_tax', 0) -
+                item.get('successful_bid', 0) -
+                item.get('successful_bid_tax', 0) -
+                item.get('commission_fee', 0) -
+                item.get('commission_fee_tax', 0)
+            )
         else:
             return (
                 item.get('vehicle_price', 0) +
@@ -197,37 +268,39 @@ class OrderViewSet(viewsets.ModelViewSet):
             'canceling_fee': to_decimal(item_data.get('canceling_fee', 0)),
         }
 
-    def _resolve_category_for_item(self, user, raw_category):
-        category_value = str(raw_category or '').strip()
-        if not category_value:
-            raise ValueError('Car name/category is required')
+    def _resolve_category_for_item(self, user, raw_company, raw_model):
+        company_value = str(raw_company or '').strip()
+        model_value = str(raw_model or '').strip()
+        
+        if not company_value or not model_value:
+            raise ValueError('Car company and model are required')
 
-        if category_value.isdigit():
-            category = CarCategory.objects.filter(id=int(category_value), user=user).first()
+        if company_value.isdigit():
+            category = CarCategory.objects.filter(id=int(company_value), user=user).first()
             if category:
                 return category
 
         category = CarCategory.objects.filter(
-            user=user
-        ).filter(
-            Q(name__iexact=category_value) | Q(company__iexact=category_value)
+            user=user,
+            company__iexact=company_value,
+            model__iexact=model_value
         ).first()
-        if category:
-            return category
-
-        category = CarCategory.objects.filter(name=category_value, company=category_value).first()
         if category:
             return category
 
         try:
             return CarCategory.objects.create(
                 user=user,
-                name=category_value,
-                company=category_value,
+                company=company_value,
+                model=model_value,
                 description=''
             )
         except IntegrityError:
-            category = CarCategory.objects.filter(name=category_value, company=category_value).first()
+            category = CarCategory.objects.filter(
+                company=company_value,
+                model=model_value,
+                user=user
+            ).first()
             if category:
                 return category
             raise
@@ -303,11 +376,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         resolved_categories = []
         for item_data in items_data:
             try:
-                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category')))
+                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category'), item_data.get('model')))
             except ValueError as exc:
                 return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         for item_data, category in zip(items_data, resolved_categories):
-                car_model = item_data.get('model') or category.name
+                # car_model = item_data.get('model') or category.name
                 car_e = Car.objects.filter(chassis_number=item_data['chassis_number']).first()
                 if car_e:
                     return Response({'error': f"Car with chassis number {item_data['chassis_number']} already exists"}, status=status.HTTP_400_BAD_REQUEST)
@@ -340,11 +413,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
 
             for item_data, category in zip(items_data, resolved_categories):
-                car_model = item_data.get('model') or category.name
-                car= Car.objects.create(
+                car = Car.objects.create(
                     user=request.user,
                     category=category,
-                    model=car_model,
                     chassis_number=item_data['chassis_number'],
                     year=item_data['year']
                 )
@@ -423,7 +494,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         resolved_categories = []
         for item_data in items_data:
             try:
-                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category')))
+                resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category'), item_data.get('model')))
             except ValueError as exc:
                 return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -448,11 +519,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             order.items.all().delete()
 
             for item_data, category in zip(items_data, resolved_categories):
-                car_model = item_data.get('model') or category.name
                 car, _ = Car.objects.get_or_create(
                     user=request.user,
                     category=category,
-                    model=car_model,
                     chassis_number=item_data['chassis_number'],
                     year=item_data['year']
                 )
@@ -578,7 +647,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 car, _ = Car.objects.get_or_create(
                     user=request.user,
                     category_id=item_data['category'],
-                    model=item_data['model'],
+                    # model=item_data['model'],
                     chassis_number=item_data['chassis_number'],
                     year=item_data['year']
                 )
@@ -901,8 +970,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             row = [
                 str(idx),
                 Paragraph(item.venue or '', small_style),
-                Paragraph(str(item.car_category.name) if item.car_category else '', small_style),
-                Paragraph(item.car.model or '', small_style),
+                Paragraph(str(item.car_category.company) if item.car_category else '', small_style),
+                Paragraph(str(item.car_category.model) if item.car_category else '', small_style),
                 Paragraph(str(item.car.year) or '', small_style),
                 Paragraph(item.car.chassis_number or '', small_style),
                 Paragraph(f'{item.vehicle_price:,.0f}<br/>{item.vehicle_price_tax:,.0f}', small_style),
@@ -934,7 +1003,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             totals['subtotal'] += item.subtotal
 
         data.append([
-            '', '', '', '', '合計',
+            '', '', '', '', '', '合計',
             Paragraph(f'{totals["vehicle_price"]:,.0f}<br/>{totals["vehicle_price_tax"]:,.0f}', small_style),
             Paragraph(f'{totals["recycle_fee"]:,.0f}', small_style),
             Paragraph(f'{totals["listing_fee"]:,.0f}<br/>{totals["listing_fee_tax"]:,.0f}', small_style),

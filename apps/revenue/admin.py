@@ -3,8 +3,8 @@ from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, Sa
 
 @admin.register(CarCategory)
 class CarCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'company', 'user', 'created_at']
-    search_fields = ['name', 'company']
+    list_display = ['company', 'user', 'created_at']
+    search_fields = ['company']
 
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
