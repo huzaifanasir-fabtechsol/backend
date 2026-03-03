@@ -1124,10 +1124,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         sales = orders.filter(transaction_type='sale').aggregate(total=Sum('total_amount'))['total'] or 0
         purchases = orders.filter(transaction_type='purchase').aggregate(total=Sum('total_amount'))['total'] or 0
         auctions = orders.filter(transaction_type='auction').aggregate(total=Sum('total_amount'))['total'] or 0
+        nagare = orders.filter(transaction_type='nagare').aggregate(total=Sum('total_amount'))['total'] or 0
         total_expenses = expenses.aggregate(total=Sum('amount'))['total'] or 0
         
         revenue = sales + auctions
-        cost = purchases + total_expenses
+        cost = purchases + total_expenses + nagare
         profit = revenue - cost
         
         wb = Workbook()
@@ -1144,7 +1145,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         ws['B5'] = '¥'
         ws['A6'] = 'Total Revenue (Sales + Auctions)'
         ws['B6'] = f'¥ {float(revenue)}'
-        ws['A7'] = 'Total Cost (Purchases + Expenses)'
+        ws['A7'] = 'Total Cost (Purchases + Expenses + Nagare)'
         ws['B7'] = f'¥ {float(cost)}'
         ws['A8'] = 'Net Profit'
         ws['B8'] = f'¥ {float(profit)}'
@@ -1160,9 +1161,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         ws['B13'] = f'¥ {float(purchases)}'
         ws['A14'] = 'Expenses'
         ws['B14'] = f'¥ {float(total_expenses)}'
+        ws['A15'] = 'Nagare'
+        ws['B15'] = f'¥ {float(nagare)}'
         
-        ws['A16'] = 'Transactions Detail'
-        ws['A16'].font = Font(bold=True)
+        ws['A17'] = 'Transactions Detail'
+        ws['A17'].font = Font(bold=True)
         ws.append(['Type', 'Date', 'Payment Status', 'Amount'])
         
         for order in orders:
@@ -1225,7 +1228,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'total_amount': exp.amount
                 })
         
-        if report_type in ['all', 'orders', 'sales', 'purchases', 'auctions']:
+        if report_type in ['all', 'orders', 'sales', 'purchases', 'auctions', 'nagare']:
             if period == 'all':
                 queryset = Order.objects.filter(user=request.user)
             else:
@@ -1237,6 +1240,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(transaction_type='purchase')
             elif report_type == 'auctions':
                 queryset = queryset.filter(transaction_type='auction')
+            elif report_type == 'nagare':
+                queryset = queryset.filter(transaction_type='nagare')
             
             if payment_status:
                 queryset = queryset.filter(payment_status=payment_status)
