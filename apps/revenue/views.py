@@ -1337,6 +1337,62 @@ class AuctionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        from openpyxl import load_workbook
+        from io import BytesIO
+        
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file = request.FILES['file']
+        if not file.name.endswith('.xlsx'):
+            return Response({'error': 'Only .xlsx files are supported'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            wb = load_workbook(BytesIO(file.read()))
+            ws = wb.active
+            auctions_created = 0
+            auctions_skipped = 0
+            
+            # Get headers from first row
+            headers = []
+            for col in range(1, ws.max_column + 1):
+                header = ws.cell(row=1, column=col).value
+                if header and str(header).strip():
+                    headers.append((col, str(header).strip()))
+            
+            # Process each header column
+            for col_idx, header_name in headers:
+                # Get auction names from rows 2 onwards
+                for row in range(2, ws.max_row + 1):
+                    auction_name = ws.cell(row=row, column=col_idx).value
+                    if auction_name and str(auction_name).strip():
+                        auction_name = str(auction_name).strip()
+                        
+                        # Create name in format "Header - Row name"
+                        full_name = f"{header_name} - {auction_name}"
+                        
+                        auction, created = Auction.objects.get_or_create(
+                            name=full_name,
+                            user=request.user,
+                            defaults={'description': ''}
+                        )
+                        
+                        if created:
+                            auctions_created += 1
+                        else:
+                            auctions_skipped += 1
+            
+            return Response({
+                'message': f'Import completed. Created: {auctions_created}, Skipped: {auctions_skipped}',
+                'created': auctions_created,
+                'skipped': auctions_skipped
+            })
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
