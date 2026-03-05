@@ -379,11 +379,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 resolved_categories.append(self._resolve_category_for_item(request.user, item_data.get('category'), item_data.get('model')))
             except ValueError as exc:
                 return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        for item_data, category in zip(items_data, resolved_categories):
-                # car_model = item_data.get('model') or category.name
-                car_e = Car.objects.filter(chassis_number=item_data['chassis_number']).first()
-                if car_e:
-                    return Response({'error': f"Car with chassis number {item_data['chassis_number']} already exists"}, status=status.HTTP_400_BAD_REQUEST)
+        # for item_data, category in zip(items_data, resolved_categories):
+        #         # car_model = item_data.get('model') or category.name
+        #         car_e = Car.objects.filter(chassis_number=item_data['chassis_number']).first()
+        #         if car_e:
+        #             return Response({'error': f"Car with chassis number {item_data['chassis_number']} already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
         today = datetime.now().date()
         date_str = today.strftime('%Y%m%d')
@@ -413,11 +413,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
 
             for item_data, category in zip(items_data, resolved_categories):
-                car = Car.objects.create(
-                    user=request.user,
+                car, created = Car.objects.get_or_create(
+                    # user=request.user,
                     category=category,
                     chassis_number=item_data['chassis_number'],
-                    year=item_data['year']
                 )
 
                 OrderItem.objects.create(
@@ -520,10 +519,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             for item_data, category in zip(items_data, resolved_categories):
                 car, _ = Car.objects.get_or_create(
-                    user=request.user,
+                    # user=request.user,
                     category=category,
                     chassis_number=item_data['chassis_number'],
-                    year=item_data['year']
                 )
 
                 OrderItem.objects.create(
@@ -790,11 +788,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             alignment=TA_CENTER,
             fontName='HeiseiMin-W3'
         )
+        company_name_style = ParagraphStyle(
+            'CompanyName',
+            parent=styles['Normal'],
+            fontSize=16,   # 🔥 Bigger size
+            fontName='HeiseiMin-W3',
+            leading=18,
+            alignment=TA_RIGHT
+        )
         title = Paragraph("請求書", title_style)
         
         # Company info in top right, invoice details below
         header_data = [
-            ["", "", user.company_name],
+            ["", "", Paragraph(user.company_name, company_name_style)],
             ["", "", user.company_address],
             ["", "", f"TEL/FAX: {user.company_phone}"],
             ["", "", f"{user.business_registration}"],
@@ -945,7 +951,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     '手数料',            # Commission Fee
     '輸送料',            # Transport Fee
     '登録料',            # Registration Fee
-    'キャンセル料',      # Canceling Fee
+    'リサイクル料',      # Canceling Fee
     '合計'               # Total
 ]
 
@@ -962,7 +968,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         small_style = ParagraphStyle(
             'SmallTable',
             parent=styles['Normal'],
-            fontSize=6,
+            fontSize=7,
             leading=7,
             fontName='HeiseiMin-W3'
         )
@@ -1014,21 +1020,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             Paragraph(f'{totals["canceling_fee"]:,.0f}', small_style),
             Paragraph(f'{totals["subtotal"]:,.0f}', small_style),
         ])
-        base_col_widths = [18, 36, 40, 42, 42, 55, 45, 35, 45, 45, 45, 45, 45, 35, 45]
+        base_col_widths = [18, 36, 40, 42, 30, 45, 45, 47, 45, 45, 45, 45, 45, 45, 45]
         base_total = sum(base_col_widths)
         target_width = doc.width * 0.99
         scale = target_width / base_total if base_total else 1
         col_widths = [w * scale for w in base_col_widths]
         table = Table(data, colWidths=col_widths, repeatRows=1)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.black),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.white),  # White header
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),   # Black text
             ('FONTNAME', (0, 0), (-1, 0), 'HeiseiMin-W3'),
-            ('FONTSIZE', (0, 0), (-1, 0), 5),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('ALIGN', (0, 1), (4, -2), 'CENTER'),
             ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 1), (-1, -1), 4),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
             ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
             ('FONTNAME', (0, -1), (-1, -1), 'HeiseiMin-W3'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),

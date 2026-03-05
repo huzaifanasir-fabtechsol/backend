@@ -3,13 +3,13 @@ from apps.revenue.models import CarCategory, Car, Order, OrderItem, Customer, Sa
 
 @admin.register(CarCategory)
 class CarCategoryAdmin(admin.ModelAdmin):
-    list_display = ['company', 'user', 'created_at']
+    list_display = ['company', 'model', 'user', 'created_at']
     search_fields = ['company']
 
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
-    list_display = ['model', 'chassis_number', 'year', 'category', 'user', 'created_at']
-    search_fields = ['model', 'chassis_number']
+    list_display = ['chassis_number', 'year', 'category', 'user', 'created_at']
+    search_fields = ['chassis_number']
     list_filter = ['year', 'category']
 
 class OrderItemInline(admin.TabularInline):
