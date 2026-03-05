@@ -414,9 +414,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             for item_data, category in zip(items_data, resolved_categories):
                 car, created = Car.objects.get_or_create(
-                    # user=request.user,
+                    user=request.user,
                     category=category,
                     chassis_number=item_data['chassis_number'],
+                    defaults={'year': item_data['year']}
                 )
 
                 OrderItem.objects.create(
@@ -519,9 +520,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             for item_data, category in zip(items_data, resolved_categories):
                 car, _ = Car.objects.get_or_create(
-                    # user=request.user,
+                    user=request.user,
                     category=category,
                     chassis_number=item_data['chassis_number'],
+                    defaults={'year': item_data['year']}
                 )
 
                 OrderItem.objects.create(
