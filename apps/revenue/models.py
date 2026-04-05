@@ -129,7 +129,19 @@ class OrderItem(BaseModel):
         # Calculate subtotal based on transaction type
         order_type = self.order.transaction_type if hasattr(self, 'order') and self.order else 'sale'
         
-        if order_type == 'nagare':
+        if order_type == 'purchase':
+            # PURCHASE: Sum all values (everything is positive)
+            self.subtotal = (
+                self.vehicle_price + self.vehicle_price_tax +
+                self.recycle_fee +
+                self.listing_fee + self.listing_fee_tax +
+                self.successful_bid + self.successful_bid_tax +
+                self.commission_fee + self.commission_fee_tax +
+                self.transport_fee + self.transport_fee_tax +
+                self.registration_fee + self.registration_fee_tax +
+                self.canceling_fee
+            )
+        elif order_type == 'nagare':
             # NAGARE: Plus vehicle price, tax, recycle, listing fee, listing tax, canceling
             # Minus successful bid, commission, transport, registration (and their taxes)
             self.subtotal = (
@@ -156,7 +168,7 @@ class OrderItem(BaseModel):
                 self.commission_fee - self.commission_fee_tax
             )
         else:
-            # PURCHASE/AUCTION: Plus vehicle price, tax, recycle, canceling
+            # AUCTION: Plus vehicle price, tax, recycle, canceling
             # Minus listing fee, successful bid, commission, transport, registration (and their taxes)
             self.subtotal = (
                 self.vehicle_price + self.vehicle_price_tax +

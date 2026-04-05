@@ -26,6 +26,21 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import Image
 from reportlab.lib.utils import ImageReader
 
+def _mirror_party_record(source_obj, target_model):
+    mirror_fields = {
+        'name': source_obj.name,
+        'email': source_obj.email,
+        'address': source_obj.address,
+        'phone': source_obj.phone,
+        'account_number': source_obj.account_number,
+        'branch_code': source_obj.branch_code,
+        'bank_name': source_obj.bank_name,
+        'swift_code': source_obj.swift_code,
+        'user': source_obj.user,
+    }
+
+    target_model.objects.get_or_create(**mirror_fields)
+
 class CarCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CarCategorySerializer
     permission_classes = [IsAuthenticated]
@@ -191,7 +206,25 @@ class OrderViewSet(viewsets.ModelViewSet):
     def _calculate_item_total(self, item):
         order_type = self.request.data.get('transaction_type', 'sale')
         
-        if order_type == 'nagare':
+        if order_type == 'purchase':
+            # For purchase: sum all values (everything is positive)
+            return (
+                item.get('vehicle_price', 0) +
+                item.get('vehicle_price_tax', 0) +
+                item.get('recycle_fee', 0) +
+                item.get('listing_fee', 0) +
+                item.get('listing_fee_tax', 0) +
+                item.get('successful_bid', 0) +
+                item.get('successful_bid_tax', 0) +
+                item.get('commission_fee', 0) +
+                item.get('commission_fee_tax', 0) +
+                item.get('transport_fee', 0) +
+                item.get('transport_fee_tax', 0) +
+                item.get('registration_fee', 0) +
+                item.get('registration_fee_tax', 0) +
+                item.get('canceling_fee', 0)
+            )
+        elif order_type == 'nagare':
             return (
                 item.get('vehicle_price', 0) +
                 item.get('vehicle_price_tax', 0) +
@@ -663,14 +696,27 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def _add_watermark(self, canvas, doc, text="INVOICE"):
         canvas.saveState()
-        canvas.setFont("HeiseiMin-W3", 80)
+        canvas.setFont("HeiseiMin-W3", 60)
         canvas.setFillColor(colors.lightgrey)
-        canvas.setFillAlpha(0.15)
+        canvas.setFillAlpha(0.12)
 
         width, height = doc.pagesize
-        canvas.translate(width / 2, height / 2)
-        canvas.rotate(45)
-        canvas.drawCentredString(0, 0, text)
+        
+        # Calculate spacing for multiple watermarks
+        x_spacing = width / 3
+        y_spacing = height / 4
+        
+        # Add multiple diagonal watermarks
+        for i in range(3):  # 3 columns
+            for j in range(4):  # 4 rows
+                x = x_spacing * (i + 0.5)
+                y = y_spacing * (j + 0.5)
+                
+                canvas.saveState()
+                canvas.translate(x, y)
+                canvas.rotate(45)
+                canvas.drawCentredString(0, 0, text)
+                canvas.restoreState()
 
         canvas.restoreState()
 
@@ -1282,7 +1328,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
-        queryset = Customer.objects.filter(user=self.request.user)
+        queryset = Customer.objects.filter(user=self.request.user).order_by('-created_at')
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
@@ -1293,7 +1339,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        customer = serializer.save(user=self.request.user)
+        _mirror_party_record(customer, Saler)
 
 class SalerViewSet(viewsets.ModelViewSet):
     serializer_class = SalerSerializer
@@ -1301,7 +1348,7 @@ class SalerViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPageNumberPagination
 
     def get_queryset(self):
-        queryset = Saler.objects.filter(user=self.request.user)
+        queryset = Saler.objects.filter(user=self.request.user).order_by('-created_at')
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
@@ -1312,7 +1359,8 @@ class SalerViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        saler = serializer.save(user=self.request.user)
+        _mirror_party_record(saler, Customer)
 
 class CompanyAccountViewSet(viewsets.ModelViewSet):
     serializer_class = CompanyAccountSerializer
