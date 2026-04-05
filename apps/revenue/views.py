@@ -423,9 +423,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         last_order = Order.objects.filter(order_number__startswith=f'ORD-{date_str}').order_by('-order_number').first()
         new_num = int(last_order.order_number.split('-')[-1]) + 1 if last_order else 1
         order_number = f'ORD-{date_str}-{new_num:03d}'
-
         total_amount = sum(self._calculate_item_total(item) for item in items_data)
-
+        existing_chassis_numbers = set(
+            Car.objects.values_list('chassis_number', flat=True)
+        )
+        for item_data in items_data:
+            chassis_number = item_data['chassis_number']
+            
+            if chassis_number in existing_chassis_numbers:
+                return Response({'error': f"Car with chassis number {chassis_number} already exists"}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user,
