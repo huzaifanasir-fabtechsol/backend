@@ -653,9 +653,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Create order number
         today = datetime.now().date()
         date_str = today.strftime('%Y%m%d')
-        last_order = Order.objects.filter(order_number__startswith=f'ORD-{date_str}').order_by('-order_number').first()
+        last_order = Order.objects.filter(order_number__startswith=f'ORD-01723182').order_by('-order_number').first()
         new_num = int(last_order.order_number.split('-')[-1]) + 1 if last_order else 1
-        order_number = f'ORD-{date_str}-{new_num:03d}'
+        order_number = f'ORD-01723182-{new_num:03d}'
 
         # Calculate total_amount
         total_amount = sum(self._calculate_item_total(item) for item in items_data)
