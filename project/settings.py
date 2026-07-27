@@ -49,7 +49,9 @@ INSTALLED_APPS += [
     "apps.account",
     "apps.expense",
     "apps.revenue",
+    "apps.hr",
 ]
+
 
 INSTALLED_APPS += [
     "rest_framework",
