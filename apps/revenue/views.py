@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import transaction, IntegrityError
 from django.http import HttpResponse
 from django.db.models import Sum, Q
@@ -1555,6 +1556,207 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 running_balance = running_balance + transaction.deposit - transaction.withdraw
                 transaction.balance = running_balance
                 transaction.save(update_fields=['balance'])
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def bulk_upload(self, request):
+        from openpyxl import load_workbook
+        from datetime import datetime, date
+        from decimal import Decimal, InvalidOperation
+
+        company_account_id = request.data.get('company_account') or request.data.get('company_account_id')
+        if not company_account_id:
+            return Response({'error': 'Company account is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_account = CompanyAccount.objects.filter(id=company_account_id, user=request.user).first()
+        if not company_account:
+            return Response({'error': 'Selected company account not found or access denied.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'error': 'No file uploaded. Please upload an .xlsx file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not file_obj.name.lower().endswith(('.xlsx', '.xls')):
+            return Response({'error': 'Invalid file format. Please upload an Excel file (.xlsx or .xls).'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            wb = load_workbook(file_obj, data_only=True)
+            sheet = wb.active
+        except Exception as e:
+            return Response({'error': f'Could not read Excel file: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return Response({'error': 'The uploaded file is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Parse & Normalize Header
+        header_row = [str(cell).strip().lower() if cell is not None else "" for cell in rows[0]]
+        
+        col_map = {}
+        for idx, col_name in enumerate(header_row):
+            normalized = col_name.replace('_', ' ').replace('-', ' ')
+            normalized = normalized.replace('transection', 'transaction').replace('depostie', 'deposit')
+            normalized = " ".join(normalized.split())
+
+            if 'date' in normalized and 'date' not in col_map:
+                col_map['date'] = idx
+            elif 'transaction id' in normalized or 'transactionid' in normalized:
+                col_map['transaction_id'] = idx
+            elif 'withdraw' in normalized:
+                col_map['withdraw'] = idx
+            elif 'deposit' in normalized:
+                col_map['deposit'] = idx
+            elif ('description' in normalized or 'detail' in normalized) and 'description' not in col_map:
+                col_map['description'] = idx
+            elif ('note' in normalized or 'memo' in normalized) and 'notes' not in col_map:
+                col_map['notes'] = idx
+
+        missing_cols = []
+        if 'date' not in col_map:
+            missing_cols.append('date')
+        if 'description' not in col_map:
+            missing_cols.append('description')
+
+        if missing_cols:
+            return Response({
+                'error': f"Missing required columns in Excel header: {', '.join(missing_cols)}. Expected headers include: date, transection id, withdraw amount, depostie amount, description, notes."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Helper function to parse date
+        def parse_date_val(val):
+            if val is None or val == '':
+                return None
+            if isinstance(val, (datetime, date)):
+                return val.date() if isinstance(val, datetime) else val
+            val_str = str(val).strip()
+            if ' ' in val_str:
+                val_str = val_str.split(' ')[0]
+            date_formats = [
+                '%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y',
+                '%m/%d/%Y', '%Y.%m.%d', '%d.%m.%Y', '%Y%m%d'
+            ]
+            for fmt in date_formats:
+                try:
+                    return datetime.strptime(val_str, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        # Helper function to parse amounts
+        def parse_amount(val):
+            if val is None or val == '' or str(val).strip() == '-':
+                return Decimal('0.00'), True
+            val_str = str(val).strip().replace(',', '').replace('¥', '').replace('$', '')
+            try:
+                dec = Decimal(val_str)
+                if dec < 0:
+                    return None, False
+                return dec, True
+            except (InvalidOperation, ValueError):
+                return None, False
+
+        # 2. Pre-validate row by row
+        row_errors = []
+        parsed_records = []
+
+        for row_idx, row in enumerate(rows[1:], start=2):
+            if not any(cell is not None and str(cell).strip() != '' for cell in row):
+                continue
+
+            errors = []
+            
+            # Date validation
+            raw_date = row[col_map['date']] if col_map['date'] < len(row) else None
+            parsed_date = parse_date_val(raw_date)
+            if not parsed_date:
+                errors.append(f"Invalid or missing Date '{raw_date if raw_date is not None else ''}'")
+
+            # Withdraw validation
+            raw_withdraw = row[col_map['withdraw']] if 'withdraw' in col_map and col_map['withdraw'] < len(row) else None
+            withdraw_val, withdraw_valid = parse_amount(raw_withdraw)
+            if not withdraw_valid:
+                errors.append(f"Invalid Withdraw amount '{raw_withdraw}'")
+
+            # Deposit validation
+            raw_deposit = row[col_map['deposit']] if 'deposit' in col_map and col_map['deposit'] < len(row) else None
+            deposit_val, deposit_valid = parse_amount(raw_deposit)
+            if not deposit_valid:
+                errors.append(f"Invalid Deposit amount '{raw_deposit}'")
+
+            # Description validation
+            raw_desc = row[col_map['description']] if col_map['description'] < len(row) else None
+            desc_str = str(raw_desc).strip() if raw_desc is not None else ""
+            if not desc_str:
+                errors.append("Description is required and cannot be empty")
+
+            # Optional Transaction ID & Notes
+            raw_tx_id = row[col_map['transaction_id']] if 'transaction_id' in col_map and col_map['transaction_id'] < len(row) else None
+            tx_id_str = str(raw_tx_id).strip() if raw_tx_id is not None else ""
+
+            raw_notes = row[col_map['notes']] if 'notes' in col_map and col_map['notes'] < len(row) else None
+            notes_str = str(raw_notes).strip() if raw_notes is not None else ""
+
+            if errors:
+                row_errors.append(f"Row {row_idx}: " + "; ".join(errors))
+            else:
+                parsed_records.append({
+                    'row_idx': row_idx,
+                    'date': parsed_date,
+                    'transaction_id': tx_id_str[:500],
+                    'withdraw': withdraw_val,
+                    'deposit': deposit_val,
+                    'description': desc_str[:500],
+                    'notes': notes_str,
+                })
+
+        if row_errors:
+            return Response({
+                'error': f"Validation failed for {len(row_errors)} row(s). Please fix the errors in your Excel file and try again.",
+                'total_errors': len(row_errors),
+                'row_errors': row_errors,
+                'valid_count': len(parsed_records)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not parsed_records:
+            return Response({'error': 'No valid data rows found in the uploaded file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3. Process & Auto-calculate Balances Chronologically
+        parsed_records.sort(key=lambda r: (r['date'], r['row_idx']))
+
+        earliest_date = parsed_records[0]['date']
+
+        latest_prev = Transaction.objects.filter(
+            user=request.user,
+            company_account=company_account,
+            date__lt=earliest_date
+        ).order_by('-date', '-id').first()
+
+        running_balance = latest_prev.balance if latest_prev else Decimal('0.00')
+
+        transactions_to_create = []
+        with transaction.atomic():
+            for rec in parsed_records:
+                running_balance = running_balance + rec['deposit'] - rec['withdraw']
+                tx = Transaction(
+                    user=request.user,
+                    company_account=company_account,
+                    date=rec['date'],
+                    transaction_id=rec['transaction_id'],
+                    withdraw=rec['withdraw'],
+                    deposit=rec['deposit'],
+                    balance=running_balance,
+                    description=rec['description'],
+                    notes=rec['notes']
+                )
+                transactions_to_create.append(tx)
+
+            Transaction.objects.bulk_create(transactions_to_create)
+
+            self._update_subsequent_balances(company_account, earliest_date, exclude_id=None)
+
+        return Response({
+            'message': f'Successfully imported {len(transactions_to_create)} transactions.',
+            'count': len(transactions_to_create)
+        }, status=status.HTTP_201_CREATED)
 
     # ############ japan post
     # @action(detail=False, methods=['post'])
