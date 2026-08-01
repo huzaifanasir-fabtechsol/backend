@@ -1685,8 +1685,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
             # Description validation
             raw_desc = row[col_map['description']] if col_map['description'] < len(row) else None
             desc_str = str(raw_desc).strip() if raw_desc is not None else ""
-            if not desc_str:
-                errors.append("Description is required and cannot be empty")
+            # if not desc_str:
+            #     errors.append("Description is required and cannot be empty")
 
             # Optional Transaction ID & Notes
             raw_tx_id = row[col_map['transaction_id']] if 'transaction_id' in col_map and col_map['transaction_id'] < len(row) else None
